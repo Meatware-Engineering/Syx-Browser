@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Сохранения для сравнения CheerpJ</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;background:#191918;color:#eee;max-width:46rem;margin:3rem auto;padding:0 1rem}h1{font-size:1.6rem}section{background:#292925;padding:1.2rem;margin:1rem 0;border-radius:.4rem}button,input{font:inherit}button{padding:.5rem .9rem;cursor:pointer}button:disabled{cursor:default;opacity:.55}input{max-width:100%}#status{white-space:pre-wrap}a{color:#c9af79}
+</style>
+<h1>Тестовые сохранения CheerpJ 4.3 / 5.0</h1>
+<p>Сначала сохраните партию и закройте вкладку с игрой. Работайте с копиями в том же браузере и по тому же адресу, где играли.</p>
+<section><h2>Скачать резервную копию</h2><p>Архив содержит браузерные сохранения и профиль игры.</p><button id="export" disabled>Скачать архив</button></section>
+<section><h2>Восстановить из архива</h2><p>Существующие файлы не заменяются: при совпадении имён они будут пропущены.</p><label for="file">Архив, созданный этой страницей</label><br><input id="file" type="file" accept=".zip,application/zip"><br><button id="import" disabled>Восстановить</button></section>
+<section><h2>Перенести сохранение Steam</h2><p>На Mac файлы игры находятся в <code>~/Library/Application Support/songsofsyx/saves/saves/</code>. Выберите файл <code>.save</code>: оригинал останется на месте, а одноимённое браузерное сохранение не будет заменено.</p><label for="native-file">Файл сохранения</label><br><input id="native-file" type="file" accept=".save"><br><button id="native-import" disabled>Перенести сохранение</button></section>
+<p id="status" role="status" aria-live="polite">Подготовка…</p>
+<p><a href="/runtime-4.3-probe.html">CheerpJ 4.3</a> · <a href="/runtime-5.0-probe.html">CheerpJ 5.0</a></p>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
+<script src="save-lock.js"></script>
+<script>
+(async()=>{
+ const root='/files/syx-runtime-compare-v1/.local/share/songsofsyx/saves';
+ const status=document.querySelector('#status'), exp=document.querySelector('#export'), imp=document.querySelector('#import'), file=document.querySelector('#file'), nativeFile=document.querySelector('#native-file'), nativeImport=document.querySelector('#native-import');
+ let Archive;
+ if(location.origin!=='http://127.0.0.1:8766'){status.textContent='Сравнение использует отдельное хранилище: откройте эту страницу на http://127.0.0.1:8766.';return;}
+ const busy=value=>{exp.disabled=value;imp.disabled=value;file.disabled=value;nativeFile.disabled=value;nativeImport.disabled=value;};
+ try {await cheerpjInit({version:17});const library=await cheerpjRunLibrary('/app/overrides.jar');Archive=await library.syx.browser.SaveArchive;busy(false);status.textContent='Готово.';}
+ catch(error){console.error('Storage initialization failed',error);status.textContent='Не удалось открыть хранилище. Проверьте соединение и перезагрузите страницу.';return;}
+ exp.onclick=async()=>{
+  busy(true);status.textContent='Создаём архив…';const path='/files/syx-backup-'+crypto.randomUUID()+'.zip';let created=false;
+  try {
+   await withStorageLock('syx-runtime-compare-v1',async()=>{
+   const count=await Archive.backup(root,path);created=true;
+   const blob=await cjFileBlob(path);const url=URL.createObjectURL(blob);
+   const link=document.createElement('a');link.href=url;link.download='songs-of-syx-saves.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
+   status.textContent='Архив подготовлен. Файлов: '+count+'. Проверьте загрузки браузера.';
+   });
+  } catch(error){if(error instanceof SaveStorageBusy)status.textContent='Сохранения используются в другой вкладке. Сохраните партию, закройте игру и попробуйте снова.';else{console.error('Backup failed',error);status.textContent='Не удалось создать архив. Проверьте, что в этом браузере есть сохранения и достаточно свободного места.';}}
+  finally{if(created)try{await Archive.removeTemporary(path);}catch(error){console.warn('Temporary archive cleanup failed',error);}busy(false);}
+ };
+ imp.onclick=async()=>{
+  const selected=file.files[0];if(!selected){status.textContent='Выберите архив.';return;}
+  if(selected.size>512*1024*1024){status.textContent='Архив слишком велик.';return;}
+  busy(true);status.textContent='Проверяем и восстанавливаем архив…';const path='/str/syx-import-'+crypto.randomUUID()+'.zip';let added=false;
+  try{
+   await withStorageLock('syx-runtime-compare-v1',async()=>{
+   cheerpOSAddStringFile(path,new Uint8Array(await selected.arrayBuffer()));added=true;
+   const result=await Archive.restore(root,path);status.textContent='Восстановление завершено. '+result;
+   });
+  }catch(error){if(error instanceof SaveStorageBusy)status.textContent='Сохранения используются в другой вкладке. Сохраните партию, закройте игру и попробуйте снова.';else{console.error('Restore failed',error);status.textContent='Не удалось полностью восстановить архив. Проверьте файл и свободное место; часть новых файлов могла быть восстановлена. Существующие файлы не заменены.';}}
+  finally{if(added)try{cheerpOSRemoveStringFile(path);}catch(error){console.warn('Temporary import cleanup failed',error);}busy(false);}
+ };
+ nativeImport.onclick=async()=>{
+  const selected=nativeFile.files[0];if(!selected){status.textContent='Выберите файл сохранения.';return;}
+  if(!selected.name.toLowerCase().endsWith('.save') || selected.size>512*1024*1024){status.textContent='Выберите файл .save размером не более 512 МБ.';return;}
+  busy(true);status.textContent='Переносим сохранение…';const path='/str/syx-native-'+crypto.randomUUID();let added=false;
+  try{
+   await withStorageLock('syx-runtime-compare-v1',async()=>{
+    cheerpOSAddStringFile(path,new Uint8Array(await selected.arrayBuffer()));added=true;
+    const result=await Archive.importSave(root,path,selected.name);status.textContent='Перенос завершён. '+result;
+   });
+  }catch(error){if(error instanceof SaveStorageBusy)status.textContent='Сохранения используются в другой вкладке. Сохраните партию, закройте игру и попробуйте снова.';else{console.error('Native import failed',error);status.textContent='Не удалось перенести сохранение. Проверьте файл и свободное место.';}}
+  finally{if(added)try{cheerpOSRemoveStringFile(path);}catch(error){console.warn('Temporary import cleanup failed',error);}busy(false);}
+ };
+})();
+</script>
+</html>

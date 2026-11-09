@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>Point vertex stride probe</title><pre id="status">Running…</pre><div id="display"></div>
+<script src="shader.js"></script><script src="bridge.js"></script><script>
+(async()=>{
+ const status=document.querySelector('#status'),api=name=>natives['Java_org_lwjgl_opengl_'+name];
+ try{
+  if(!await natives.Java_syx_browser_BrowserBridge_createContext(null,64,32))throw Error('WebGL2 unavailable');
+  const shader=(type,source)=>{const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
+  const id=await api('GL20_glCreateProgram')(),program=object(id);
+  gl.attachShader(program,shader(gl.VERTEX_SHADER,`#version 300 es
+precision highp float;
+layout(location=0) in vec2 center;
+void main(){const vec2 corners[4]=vec2[4](vec2(-0.2,-0.2),vec2(0.2,-0.2),vec2(-0.2,0.2),vec2(0.2,0.2));gl_Position=vec4(center+corners[gl_VertexID],0.0,1.0);}`));
+  gl.attachShader(program,shader(gl.FRAGMENT_SHADER,`#version 300 es
+precision highp float;
+out vec4 color;void main(){color=vec4(1.0,0.0,0.0,1.0);}`));
+  gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
+  program.syxPointGeometry=true;await api('GL20_glUseProgram')(null,id);
+  await api('GL30_glBindVertexArray')(null,await api('GL30_glGenVertexArrays')());
+  const vbo=await api('GL15_glGenBuffers')();await api('GL15_glBindBuffer')(null,gl.ARRAY_BUFFER,vbo);
+  await api('GL15_bufferDataBytes')(null,gl.ARRAY_BUFFER,new Float32Array([-0.5,0,0.5,0]),gl.STATIC_DRAW);
+  await api('GL20_glVertexAttribPointer')(null,0,2,gl.FLOAT,false,0,0);await api('GL20_glEnableVertexAttribArray')(null,0);
+  const ebo=await api('GL15_glGenBuffers')();await api('GL15_glBindBuffer')(null,gl.ELEMENT_ARRAY_BUFFER,ebo);
+  await api('GL15_bufferDataInts')(null,gl.ELEMENT_ARRAY_BUFFER,new Uint32Array([0,1]),gl.STATIC_DRAW);
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);
+  await api('GL20_glDrawElements')(null,gl.POINTS,1,gl.UNSIGNED_INT,4);
+  const pixel=x=>{const b=new Uint8Array(4);gl.readPixels(x,16,1,1,gl.RGBA,gl.UNSIGNED_BYTE,b);return Array.from(b);};
+  const left=pixel(16),right=pixel(48),error=gl.getError();
+  if(left[0]!==0||right[0]!==255||right[1]!==0||right[2]!==0||error!==0)throw Error(`left=${left}; right=${right}; GL=${error}`);
+  status.textContent='PASS: tightly packed point 1 drawn on the right; point 0 stays black; GL=0';
+ }catch(error){status.textContent='FAIL: '+error;console.error(error);}
+ finally{await natives.Java_syx_browser_BrowserBridge_destroyContext();}
+})();
+</script>

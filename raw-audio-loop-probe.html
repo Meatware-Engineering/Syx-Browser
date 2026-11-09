@@ -1,0 +1,239 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Raw audio loop probe</title>
+<style>
+ body{font:13px/1.5 ui-monospace,Menlo,monospace;margin:16px;color:#dcdfe4;background:#14161a}
+ h1{font-size:15px;margin:0 0 12px}
+ #rows div{padding:2px 0;white-space:pre-wrap}
+ #rows{margin-top:12px;padding:10px;background:#0d0f12;border:1px solid #2a2f38;border-radius:6px;max-width:1100px}
+ #players{margin:10px 0}
+ audio{width:420px;max-width:100%}
+ label{margin-right:12px}
+ button,input{font:inherit}
+</style>
+<h1>Raw HTMLMediaElement loop probe — synthetic WAV only, no adapter, no game assets</h1>
+<div>
+ <button id="start">Start</button>
+ <button id="stop" disabled>Stop</button>
+ <label>duration <input id="dur" type="number" value="2" min="0.5" max="60" step="0.5" style="width:64px"> s</label>
+ <button id="quick2">2 s run</button>
+ <button id="quick10">10 s run</button>
+ <label><input id="loop" type="checkbox" checked> loop</label>
+ <label><input id="route" type="checkbox"> WebAudio route</label>
+</div>
+<div id="players"></div>
+<div id="rows"></div>
+<script>
+const $ = id => document.getElementById(id);
+const rows = new Map();
+function row(name) {
+  let el = rows.get(name);
+  if (!el) { el = document.createElement('div'); rows.set(name, el); $('rows').appendChild(el); }
+  return el;
+}
+const setRow = (name, text) => { row(name).textContent = name + ': ' + text; };
+
+let ctx = null, tracks = [], timer = 0, raf = 0, run = 0;
+let running = false, startedAt = 0, frames = 0, maxGap = 0, lastFrame = 0;
+let log = [];
+// A zero snapshot is not a stall. Only report a clock gap after this long with no measured progress
+// (no positive currentTime delta and no new timeupdate event) while the element reports playing.
+// The label is an observed clock state, never a claim that playback is silent or broken.
+const LIVENESS_MS = 3000;
+
+// 16-bit mono WAV with short fades: same generator for every run, nothing loaded from disk.
+function wav(freq, seconds, amp, rate = 44100) {
+  const n = Math.floor(seconds * rate), buffer = new ArrayBuffer(44 + n * 2), view = new DataView(buffer);
+  const ascii = (offset, text) => { for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i)); };
+  ascii(0, 'RIFF'); view.setUint32(4, 36 + n * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true); ascii(36, 'data'); view.setUint32(40, n * 2, true);
+  const fade = Math.max(1, Math.min(n >> 1, Math.round(rate * 0.01)));
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / fade, (n - i) / fade);
+    view.setInt16(44 + i * 2, Math.sin(2 * Math.PI * freq * i / rate) * amp * env * 32767, true);
+  }
+  return new Uint8Array(buffer);
+}
+
+function logEvent(label, name) {
+  log.push(`${((performance.now() - startedAt) / 1000).toFixed(2)}s ${label}:${name}`);
+  if (log.length > 40) log.shift();
+  setRow('events', log.slice(-8).join('  |  ') || 'none');
+}
+
+function describeContext() {
+  if (!ctx) return 'not-created';
+  return `state=${ctx.state} sampleRate=${ctx.sampleRate} ctxTime=${ctx.currentTime.toFixed(3)}s baseLatency=${(ctx.baseLatency || 0).toFixed(4)}s`;
+}
+
+function bufferText(el) {
+  const ranges = [];
+  try {
+    for (let i = 0; i < el.buffered.length; i++) ranges.push(`${el.buffered.start(i).toFixed(2)}-${el.buffered.end(i).toFixed(2)}`);
+  } catch (error) { return 'unavailable'; }
+  return ranges.join(',') || 'empty';
+}
+
+function describeTrack(track) {
+  const el = track.el;
+  const now = performance.now();
+  const time = el.currentTime;
+  const delta = time - track.prevTime;
+  const newTimeupdates = track.timeupdates !== track.seenTimeupdates;
+  track.seenTimeupdates = track.timeupdates;
+  if (delta > 0) track.travel += delta;          // audio actually played between samples
+  else if (delta < -0.5) track.loops++;          // loop wrapped between samples
+  track.prevTime = time;
+  track.samples++;
+  if (time > 0) track.nonzero++;
+  if (time > track.maxTime) track.maxTime = time;
+  if (delta > 0 || newTimeupdates) track.lastProgressAt = now;
+  if (el.currentTime !== track.lastTime) { track.lastTime = el.currentTime; track.lastChange = now; }
+  // Measured clock evidence only: this says nothing about whether audio is audible.
+  const quietFor = (now - track.lastProgressAt) / 1000;
+  const clock = el.ended ? 'ended'
+    : el.paused ? 'paused'
+    : quietFor * 1000 > LIVENESS_MS ? `clock gap ${quietFor.toFixed(1)}s (no delta/timeupdate)`
+    : `advancing (progress ${quietFor.toFixed(1)}s ago)`;
+  const error = el.error ? `${el.error.code}/${el.error.message || ''}` : 'none';
+  return `currentTime=${el.currentTime.toFixed(3)} duration=${Number.isFinite(el.duration) ? el.duration.toFixed(3) : String(el.duration)}`
+    + ` paused=${el.paused} ended=${el.ended} loop=${el.loop} readyState=${el.readyState} networkState=${el.networkState}`
+    + ` buffered=${bufferText(el)} volume=${el.volume.toFixed(3)} routed=${track.gain ? 'webaudio' : 'direct'}`
+    + ` error=${error} playPromise=${track.promise} clock=${clock}`;
+}
+
+// Cumulative evidence that media advanced, independent of any single currentTime snapshot.
+function describeStats(track) {
+  const elapsed = (performance.now() - startedAt) / 1000;
+  const rate = elapsed > 0 ? track.travel / elapsed : 0;
+  return `samples=${track.samples} nonzeroSamples=${track.nonzero} travel=${track.travel.toFixed(3)}s`
+    + ` travelRate=${rate.toFixed(2)}x maxCurrentTime=${track.maxTime.toFixed(3)} loops=${track.loops} seeks=${track.seeks}`
+    + ` timeupdate=${track.timeupdates} endedEvents=${track.endedEvents}`
+    + ` livenessWindow=${(LIVENESS_MS / 1000).toFixed(1)}s`;
+}
+
+function render() {
+  if (!running) return;
+  const elapsed = (performance.now() - startedAt) / 1000;
+  setRow('run', `#${run} ${elapsed.toFixed(1)}s elements=${tracks.length} duration=${$('dur').value}s loop=${$('loop').checked} route=${$('route').checked} maxFrameGap=${maxGap.toFixed(0)}ms`);
+  setRow('heartbeat', `fps=${elapsed > 0 ? (frames / elapsed).toFixed(1) : '0'} frames=${frames} raf=${running ? 'scheduled' : 'stopped'}`);
+  setRow('context', describeContext());
+  setRow('stream-detached', describeTrack(tracks[0]));
+  setRow('stats-detached', describeStats(tracks[0]));
+  setRow('stream-attached', describeTrack(tracks[1]));
+  setRow('stats-attached', describeStats(tracks[1]));
+}
+
+function frame(now) {
+  const gap = now - lastFrame;
+  if (gap > maxGap) maxGap = gap;
+  lastFrame = now; frames++;
+  if (running) raf = requestAnimationFrame(frame);
+}
+
+function stopRun() {
+  running = false;
+  clearInterval(timer); cancelAnimationFrame(raf);
+  const revoked = new Set();
+  for (const track of tracks) {
+    track.alive = false;                       // queued media events are ignored from here on
+    const el = track.el;
+    try { el.pause(); el.removeAttribute('src'); el.load(); } catch (error) { logEvent(track.label, 'cleanup-error'); }
+    try { track.input?.disconnect(); track.gain?.disconnect(); } catch (error) { logEvent(track.label, 'disconnect-error'); }
+    el.remove();
+    if (track.url && !revoked.has(track.url)) { URL.revokeObjectURL(track.url); revoked.add(track.url); }
+  }
+  tracks = [];
+  $('players').replaceChildren();
+  $('start').disabled = false; $('stop').disabled = true;
+}
+
+function start() {
+  stopRun();
+  run++;
+  log = [];
+  if (!ctx) {
+    ctx = new AudioContext();          // created in the Start gesture
+    ctx.addEventListener('statechange', () => { if (running) setRow('context', describeContext()); });
+  }
+  setRow('context-error', 'none');
+  // Called synchronously in the gesture; the result is not awaited, but a rejection is recorded.
+  try {
+    const resumed = ctx.resume();
+    if (resumed && typeof resumed.catch === 'function') {
+      resumed.catch(error => setRow('context-error', 'resume rejected: ' + (error && error.name || error)));
+    }
+  } catch (error) { setRow('context-error', 'resume threw: ' + (error && error.name || error)); }
+  const seconds = Math.max(0.5, Math.min(60, Number($('dur').value) || 2));
+  const loop = $('loop').checked, routed = $('route').checked;
+  // Empty Blob MIME mirrors the adapter's `new Blob([bytes])`; the WAV header should be enough.
+  const url = URL.createObjectURL(new Blob([wav(220, seconds, 0.25)]));
+  const make = (label, attach) => {
+    const el = new Audio(url);
+    el.preload = 'auto';
+    el.loop = loop;
+    if (attach) { el.controls = true; $('players').appendChild(el); }
+    let gainNode = null, inputNode = null;
+    if (routed) {
+      inputNode = ctx.createMediaElementSource(el);
+      gainNode = ctx.createGain();
+      gainNode.gain.value = 0.05;
+      inputNode.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      el.volume = 1;
+    } else el.volume = 0.05;
+    const track = {
+      label, el, url, input: inputNode, gain: gainNode, promise: 'not-started',
+      run, alive: true,
+      lastTime: el.currentTime, lastChange: performance.now(), prevTime: 0,
+      samples: 0, nonzero: 0, travel: 0, maxTime: 0, loops: 0, seeks: 0, timeupdates: 0, endedEvents: 0,
+      seenTimeupdates: 0, lastProgressAt: performance.now()
+    };
+    for (const name of ['playing', 'waiting', 'stalled', 'seeking', 'seeked', 'ended', 'pause', 'canplay', 'loadedmetadata', 'timeupdate', 'error']) {
+      el.addEventListener(name, () => {
+        if (!track.alive || track.run !== run) return;   // never let a replaced track write into a new run
+        if (name === 'timeupdate') { track.timeupdates++; return; }
+        if (name === 'seeking') track.seeks++;
+        if (name === 'ended') track.endedEvents++;
+        if (name === 'seeked') {
+          if (el.currentTime < track.prevTime - 0.5) track.loops++;
+          track.prevTime = el.currentTime;
+        }
+        logEvent(label, name);
+      });
+    }
+    tracks.push(track);
+    return track;
+  };
+  make('detached', false);             // never appended to the document
+  make('attached', true);              // visible, with native controls
+  startedAt = performance.now(); frames = 0; maxGap = 0; lastFrame = startedAt; running = true;
+  $('start').disabled = true; $('stop').disabled = false;
+  for (const track of tracks) {
+    try {
+      const promise = track.el.play();   // never awaited: promise state is reported instead
+      track.promise = 'pending';
+      if (promise && typeof promise.then === 'function') {
+        promise.then(() => { if (track.alive) track.promise = 'resolved'; },
+          error => { if (track.alive) track.promise = 'rejected:' + (error && error.name || error); });
+      } else track.promise = 'no-promise';
+    } catch (error) { track.promise = 'threw:' + (error && error.name || error); }
+  }
+  timer = setInterval(render, 250);
+  raf = requestAnimationFrame(frame);
+  render();
+}
+
+$('start').onclick = start;
+$('stop').onclick = () => { stopRun(); setRow('run', `stopped after run #${run}`); };
+$('quick2').onclick = () => { $('dur').value = 2; start(); };
+$('quick10').onclick = () => { $('dur').value = 10; start(); };
+setRow('run', 'idle');
+setRow('heartbeat', 'idle');
+setRow('context', 'not-created');
+setRow('context-error', 'none');
+setRow('stats-detached', 'counters appear while a run is active');
+setRow('stats-attached', 'counters appear while a run is active');
+</script>

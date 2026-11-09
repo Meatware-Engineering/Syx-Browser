@@ -1,0 +1,24 @@
+const assert = require('node:assert/strict');
+const { webglSource, expandPointGeometry, uniformInitializers } = require('./shader.js');
+
+const converted = webglSource('#version 330 core\nin uvec2 tex;\nout vec2 uv;\nvoid main(){ uv = tex; }');
+assert.match(converted, /^#version 300 es\nprecision highp float;/);
+assert.match(converted, /uv = vec2\(tex\);/);
+assert.match(webglSource('#version 330 core\nin vec2 tex;\nvoid main(){ uv = tex; }'), /uv = tex;/);
+const texture = webglSource('#version 330 core\nuniform sampler2DRect s;\nvoid main(){ if (c.w == 0) c = texture(s, uv); }');
+assert.match(texture, /uniform sampler2D s;/);
+assert.match(texture, /textureRect\(s, uv\)/);
+assert.match(texture, /c\.w == 0\.0/);
+assert.match(webglSource('#version 330 core\nvoid main(){if ((a.w - vD) <= 0) discard;}'), /vD\) <= 0\.0/);
+assert.match(webglSource('#version 330 core\nvoid main(){ uv = xy*screen/2; }'), /screen\/2\.0/);
+assert.match(webglSource('float a = texCoord_i.x - int(texCoord_i.x);'), /texCoord_i.x - float\(int\(texCoord_i.x\)\)/);
+const vertex = '#version 330 core\nout vec2 gPos;\nvoid main(){gPos=vec2(1);gl_Position=vec4(0);}';
+const geometry = '#version 330 core\nlayout (points) in; layout (triangle_strip, max_vertices=4) out; in vec2 gPos[]; out vec2 v; void main(){v=gPos[0]; gl_Position=gl_in[0].gl_Position; EmitVertex(); EmitVertex(); EmitVertex(); EmitVertex(); EndPrimitive();}';
+const expanded = expandPointGeometry(vertex, geometry);
+assert.match(expanded, /void syx_vertex_main\(\)/);
+assert.match(expanded, /if \(gl_VertexID == 3\) return;/);
+assert.doesNotMatch(expanded, /EmitVertex|gl_in|gPos\[0\]/);
+assert.throws(() => expandPointGeometry(vertex, geometry.replace('EmitVertex();', '')), /Unsupported geometry/);
+const initialized = 'uniform float depth = 1.0; uniform vec3 tint = vec3(0.0, 0.0, 1.0);';
+assert.deepEqual(uniformInitializers(initialized), [{type: 'float', name: 'depth', values: [1]}, {type: 'vec3', name: 'tint', values: [0, 0, 1]}]);
+assert.doesNotMatch(webglSource(initialized), /=/);

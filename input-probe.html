@@ -1,0 +1,82 @@
+<!doctype html><meta charset="utf-8"><title>Input probe</title><button id="run">Run input test</button><pre id="result">Ready</pre><div id="display"></div>
+<script src="shader.js"></script><script src="bridge.js"></script>
+<script>
+document.querySelector('#run').onclick = async () => {
+  const assert = (actual, expected) => { if (JSON.stringify(actual) !== JSON.stringify(expected)) throw Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`); };
+  try {
+    canvas = document.createElement('canvas'); canvas.tabIndex = 0; canvas.width=100; canvas.height=100; document.querySelector('#display').append(canvas);
+    await natives.Java_syx_browser_BrowserBridge_installInputHandler();
+    canvas.focus();
+    canvas.dispatchEvent(new KeyboardEvent('keydown', {code:'Numpad7', key:'7', bubbles:true}));
+    canvas.dispatchEvent(new KeyboardEvent('keydown', {code:'F15', key:'F15', bubbles:true}));
+    canvas.dispatchEvent(new KeyboardEvent('keydown', {code:'KeyW', key:'w', bubbles:true}));
+    canvas.dispatchEvent(new MouseEvent('mousedown', {button:0, clientX:10, clientY:10, bubbles:true}));
+    canvas.dispatchEvent(new FocusEvent('blur'));
+    window.dispatchEvent(new MouseEvent('mouseup', {button:0, bubbles:true}));
+    const first = Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput());
+    const second = Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput());
+    const third = Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput());
+    assert(first, [1,327,1,0,2,55,0,0,1,304,1,0,1,87,1,0,2,119,0,0,1,327,0,0,1,304,0,0,1,87,0,0]);
+    assert(second, [3,0,1,0]);
+    assert(third, [3,0,0,0]);
+    canvas.dispatchEvent(new KeyboardEvent('keyup', {code:'KeyW', key:'w', bubbles:true}));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), []);
+    canvas.dispatchEvent(new KeyboardEvent('keydown', {code:'KeyQ', key:'й', bubbles:true}));
+    canvas.dispatchEvent(new KeyboardEvent('keyup', {code:'KeyQ', key:'й', bubbles:true}));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), [1,81,1,0,2,1081,0,0,1,81,0,0]);
+    const altGr=new KeyboardEvent('keydown',{code:'KeyQ',key:'@',ctrlKey:true,altKey:true,modifierAltGraph:true,bubbles:true,cancelable:true});
+    if (!altGr.getModifierState('AltGraph')) throw Error('Browser cannot synthesize AltGraph for this test');
+    canvas.dispatchEvent(altGr);
+    canvas.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyQ',key:'@',ctrlKey:true,altKey:true,modifierAltGraph:true,bubbles:true}));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), [1,81,1,6,2,64,0,0,1,81,0,6]);
+    canvas.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyQ',key:'q',ctrlKey:true,bubbles:true}));
+    canvas.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyQ',key:'q',ctrlKey:true,bubbles:true}));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), [1,81,1,2,1,81,0,2]);
+    const shortcut=new KeyboardEvent('keydown',{code:'KeyV',key:'v',ctrlKey:true,bubbles:true,cancelable:true});
+    canvas.dispatchEvent(shortcut); if(shortcut.defaultPrevented)throw new Error('Paste shortcut was blocked');
+    const value='a'.repeat(129)+'Ж😀', clipboard=new DataTransfer();clipboard.setData('text/plain',value);
+    const paste=new ClipboardEvent('paste',{clipboardData:clipboard,bubbles:true,cancelable:true});canvas.dispatchEvent(paste);
+    if(!paste.defaultPrevented)throw new Error('Paste was not handled');
+    canvas.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyV',key:'v',ctrlKey:true,bubbles:true}));
+    const chunks=[Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput())];
+    const chars=chunks.map(chunk=>chunk.filter((_,i)=>i%4===0).filter(kind=>kind===2).length);
+    assert(chars,[128,4]);
+    const emitted=chunks.flatMap(chunk=>{const chars=[];for(let i=0;i<chunk.length;i+=4)if(chunk[i]===2)chars.push(chunk[i+1]);return chars;});
+    assert(emitted,Array.from({length:value.length},(_,i)=>value.charCodeAt(i)));
+    const r=canvas.getBoundingClientRect(), mouse=(type,x,y)=>new MouseEvent(type,{button:0,clientX:r.left+x,clientY:r.top+y,bubbles:true});
+    canvas.dispatchEvent(mouse('mousedown',10,10)); canvas.dispatchEvent(mouse('mousemove',80,80)); window.dispatchEvent(mouse('mouseup',80,80));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), []);
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), [3,0,1,0]);
+    const near=async (x,y)=>{if(Math.abs(await natives.Java_syx_browser_BrowserBridge_cursorX()-x)>1 || Math.abs(await natives.Java_syx_browser_BrowserBridge_cursorY()-y)>1)throw Error('Wrong drag coordinates');};
+    await near(10,10);
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), [3,0,0,0]);
+    await near(80,80);
+    canvas.dispatchEvent(mouse('mousedown',10,10)); window.dispatchEvent(mouse('mouseup',10,10));
+    canvas.dispatchEvent(mouse('mousedown',80,80)); window.dispatchEvent(mouse('mouseup',80,80));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()), []);
+    for (const [action,x,y] of [[1,10,10],[0,10,10],[1,80,80],[0,80,80]]) {
+      assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),[3,0,action,0]); await near(x,y);
+    }
+    const key=(type,ctrlKey)=>new KeyboardEvent(type,{code:'ControlLeft',key:'Control',ctrlKey,bubbles:true});
+    const ctrlMouse=(type)=>new MouseEvent(type,{button:0,ctrlKey:true,bubbles:true});
+    canvas.dispatchEvent(key('keydown',true)); canvas.dispatchEvent(ctrlMouse('mousedown')); window.dispatchEvent(ctrlMouse('mouseup')); canvas.dispatchEvent(key('keyup',false));
+    for(const expected of [[1,341,1,2],[3,0,1,2],[3,0,0,2],[1,341,0,0]]) assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),expected);
+    canvas.dispatchEvent(mouse('mousedown',10,10)); canvas.dispatchEvent(key('keydown',true)); window.dispatchEvent(ctrlMouse('mouseup')); canvas.dispatchEvent(key('keyup',false));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),[]);
+    for(const expected of [[3,0,1,0],[1,341,1,2],[3,0,0,2],[1,341,0,0]]) assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),expected);
+    const shifted=(type,code,key,shiftKey)=>new KeyboardEvent(type,{code,key,shiftKey,bubbles:true});
+    canvas.dispatchEvent(shifted('keydown','ShiftLeft','Shift',true));
+    canvas.dispatchEvent(shifted('keydown','ArrowLeft','ArrowLeft',true)); canvas.dispatchEvent(shifted('keyup','ArrowLeft','ArrowLeft',true));
+    canvas.dispatchEvent(shifted('keyup','ShiftLeft','Shift',false));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),[1,340,1,1,1,263,1,1,1,263,0,1]);
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),[1,340,0,0]);
+    canvas.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',bubbles:true}));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),[1,87,1,0,2,119,0,0]);
+    await natives.Java_syx_browser_BrowserBridge_installInputHandler();
+    canvas.dispatchEvent(new KeyboardEvent('keyup',{code:'KeyW',key:'w',bubbles:true}));
+    assert(Array.from(await natives.Java_syx_browser_BrowserBridge_drainInput()),[1,87,0,0]);
+    inputCleanup(); canvas.remove();
+    document.querySelector('#result').textContent = 'PASS: keyboard, Cyrillic, AltGr, clipboard, mouse drag, modifier order and held-key reinstall';
+  } catch(error) {document.querySelector('#result').textContent='FAIL: '+error; console.error(error);}
+};
+</script>

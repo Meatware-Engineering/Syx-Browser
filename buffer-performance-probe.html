@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><title>Silent buffer performance probe</title>
+<h1>SafeBuffers — synthetic runtime measurement</h1><pre id="status">Loading Java runtime…</pre>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script>
+const status=document.querySelector('#status'),natives={Java_syx_browser_BufferPerformanceProbe_report:async(_lib,text)=>{status.textContent+='\n'+text;}};
+(async()=>{try{await cheerpjInit({version:17,natives});const exit=await cheerpjRunMain('syx.browser.BufferPerformanceProbe','/app/performance-probes.jar');status.textContent+='\nExit '+exit;}catch(error){status.textContent+='\nFAIL '+error;}})();
+</script>

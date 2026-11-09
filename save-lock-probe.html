@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Save lock probe</title><button id="run">Run save lock test</button><pre id="result">Ready</pre><script src="save-lock.js"></script><script>
+document.querySelector('#run').onclick=async()=>{
+  const result=document.querySelector('#result');
+  if(!navigator.locks){result.textContent='SKIP: Web Locks unavailable';return;}
+  let release, ready; const locked=new Promise(resolve=>{ready=resolve;});
+  const name='syx-lock-probe-'+crypto.randomUUID();
+  const first=withStorageLock(name,async()=>{await new Promise(resolve=>{release=resolve;ready();});});
+  try {
+    await locked;
+    let busy=false; try{await withStorageLock(name,async()=>{});}catch(error){if(!(error instanceof SaveStorageBusy))throw error;busy=true;}
+    if(!busy)throw Error('Concurrent access was allowed');
+    release(); await first;
+    if(await withStorageLock(name,async()=>42)!==42)throw Error('Released lock could not be acquired');
+    result.textContent='PASS: concurrent access rejected and lock released';
+  }catch(error){release?.();console.error(error);result.textContent='FAIL: '+error;}
+};
+</script>

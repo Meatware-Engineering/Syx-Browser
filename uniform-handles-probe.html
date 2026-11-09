@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><title>Uniform handle lifetime probe</title><pre id="status">Running…</pre><div id="display"></div>
+<script src="shader.js"></script><script src="bridge.js"></script><script>
+(async()=>{
+ const status=document.querySelector('#status'),api=n=>natives['Java_org_lwjgl_opengl_'+n];
+ const build=async()=>{
+  const program=await api('GL20_glCreateProgram')(), shaders=[];
+  for(const [type,source] of [[gl.VERTEX_SHADER,'#version 330 core\nvoid main(){const vec2 p[3]=vec2[3](vec2(-1.0),vec2(3.0,-1.0),vec2(-1.0,3.0));gl_Position=vec4(p[gl_VertexID],0.0,1.0);}'],[gl.FRAGMENT_SHADER,'#version 330 core\nuniform float amount;out vec4 color;void main(){color=vec4(amount,0.0,0.0,1.0);}']]){
+   const shader=await api('GL20_glCreateShader')(null,type);shaders.push(shader);await api('GL20_shaderSource')(null,shader,source);await api('GL20_glCompileShader')(null,shader);
+   if(!await api('GL20_glGetShaderi')(null,shader,gl.COMPILE_STATUS))throw Error('Compile failed');await api('GL20_glAttachShader')(null,program,shader);
+  }
+  await api('GL20_glLinkProgram')(null,program);if(!await api('GL20_glGetProgrami')(null,program,gl.LINK_STATUS))throw Error('Link failed');
+  for(const shader of shaders)await api('GL20_glDeleteShader')(null,shader);
+  return program;
+ };
+ try{
+  if(!await natives.Java_syx_browser_BrowserBridge_createContext(null,8,8))throw Error('WebGL2 unavailable');
+  const bound=await build();await api('GL20_glUseProgram')(null,bound);const location=await api('GL20_getUniformLocation')(null,bound,'amount');
+  await api('GL20_glDeleteProgram')(null,bound);await api('GL20_glUniform1f')(null,location,1);
+  gl.drawArrays(gl.TRIANGLES,0,3);const pixel=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,pixel);
+  if(pixel.join()!=='255,0,0,255'||gl.getError()!==0)throw Error('Deferred current-program deletion broke uniform draw');
+  await api('GL20_glUseProgram')(null,0);
+  for(let i=0;i<32;i++){const p=await build();await api('GL20_getUniformLocation')(null,p,'amount');await api('GL20_glDeleteProgram')(null,p);}
+  if(objects.size!==0)throw Error('Retained handles after deletion: '+objects.size);
+  status.textContent='PASS: deferred bound deletion preserves red draw; unbind + 32 unbound deletes release all handles; GL=0';
+ }catch(error){status.textContent='FAIL: '+error;console.error(error);}
+ finally{await natives.Java_syx_browser_BrowserBridge_destroyContext();}
+})();
+</script>

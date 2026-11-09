@@ -1,0 +1,32 @@
+<!doctype html><meta charset="utf-8"><title>Spatial audio probe</title><button id="run">Run spatial audio test</button><pre id="result">Ready</pre>
+<script src="shader.js"></script><script src="bridge.js"></script><script src="audio.js"></script>
+<script>
+const gains=[], createGain=AudioContext.prototype.createGain;
+AudioContext.prototype.createGain=function(){const node=createGain.call(this);gains.push(node);return node;};
+installAudioNatives(natives);
+document.querySelector('#run').onclick=async()=>{
+  try {
+    canvas={width:1280,height:720};
+    const bytes=new Uint8Array(16044), view=new DataView(bytes.buffer);
+    const text=(at,s)=>[...s].forEach((c,i)=>bytes[at+i]=c.charCodeAt(0));
+    text(0,'RIFF');view.setUint32(4,16036,true);text(8,'WAVEfmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,8000,true);view.setUint32(28,16000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);text(36,'data');view.setUint32(40,16000,true);
+    const id=await natives.Java_syx_browser_BrowserAudio_load(null,'test.wav',new Int8Array(bytes.buffer),3);
+    if(!id || !await natives.Java_syx_browser_BrowserAudio_playEffect(null,id,1,1,true,0,0))throw Error('Effect did not start');
+    const distance=gains[gains.length-1];
+    const check=(expected)=>{if(Math.abs(distance.gain.value-expected)>0.00001)throw Error(`Expected ${expected}, got ${distance.gain.value}`);};
+    check(1);
+    await natives.Java_syx_browser_BrowserAudio_setListener(null,-2560,0);check(1/(2*Math.sqrt(4.25)-1));
+    await natives.Java_syx_browser_BrowserAudio_setListener(null,0,-1440);check(1/(2*Math.sqrt(4.25)-1));
+    await natives.Java_syx_browser_BrowserAudio_setListener(null,-12800,0);check(1/9);
+    const stream=await natives.Java_syx_browser_BrowserAudio_load(null,'stream.wav',new Int8Array(bytes.buffer),2);
+    if(!stream)throw Error('Stream did not load');
+    const streamDistance=gains[gains.length-1];
+    await natives.Java_syx_browser_BrowserAudio_setStreamPosition(null,stream,0,0);
+    if(Math.abs(streamDistance.gain.value-1/9)>0.00001)throw Error('Stream position was not attenuated');
+    await natives.Java_syx_browser_BrowserAudio_setListener(null,0,0);
+    if(streamDistance.gain.value!==1)throw Error('Stream position did not follow the listener');
+    await natives.Java_syx_browser_BrowserAudio_dispose();
+    document.querySelector('#result').textContent='PASS: near, horizontal, vertical and maximum-distance attenuation';
+  }catch(error){console.error(error);document.querySelector('#result').textContent='FAIL: '+error;}
+};
+</script>

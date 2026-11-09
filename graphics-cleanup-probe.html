@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><title>Graphics cleanup probe</title><p id="status">Running…</p><div id="display"></div>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="shader.js"></script><script src="bridge.js"></script><script>
+let completed=false; natives.Java_syx_browser_GraphicsCleanupProbe_complete=async()=>{completed=true;};
+(async()=>{try{await cheerpjInit({version:17,natives});const result=await cheerpjRunMain('syx.browser.GraphicsCleanupProbe','/app/overrides.jar:/app/game.jar');document.querySelector('#status').textContent=completed && result===0 && !document.querySelector('#display canvas')?'PASS: graphics context cleaned up':'FAIL: graphics cleanup incomplete';}catch(e){console.error(e);document.querySelector('#status').textContent=`Failed: ${e}`;}})();
+</script>

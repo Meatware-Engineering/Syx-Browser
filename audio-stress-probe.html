@@ -1,0 +1,227 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Browser audio stress probe</title>
+<style>
+ body{font:13px/1.45 ui-monospace,Menlo,monospace;margin:16px;color:#dcdfe4;background:#14161a}
+ h1{font-size:15px;margin:0 0 10px;font-weight:600}
+ #out{white-space:pre-wrap;margin-top:12px;padding:10px;background:#0d0f12;border:1px solid #2a2f38;border-radius:6px;max-width:960px;min-height:220px}
+ label{margin-left:10px}
+</style>
+<h1>Web Audio adapter stress probe — synthetic WAV only, no game assets</h1>
+<div>
+ <button id="start">Start</button>
+ <button id="stop" disabled>Stop</button>
+ <button id="reset" disabled>Reset (dispose)</button>
+ <label><input id="mute" type="checkbox"> mute on blur/hidden</label>
+ <label><input id="direct" type="checkbox"> direct music</label>
+ <label>effects/s <input id="rate" type="number" value="8" min="1" max="200" style="width:56px"></label>
+ <label><input id="spatial" type="checkbox" checked> spatial effects</label>
+</div>
+<pre id="out">idle</pre>
+<script src="./audio.js"></script>
+<script>
+// The game page exposes this global; the adapter's position() reads it.
+canvas = {width: 1280, height: 720};
+
+// Probe-local AudioContext tracking: the adapter never exposes its context, so capture the
+// instance here. A suspended context can still advance media currentTime while sounding silent.
+let audioContext = null, lastContextState = null, contextStates = [];
+const NativeAudioContext = window.AudioContext || window.webkitAudioContext;
+if (NativeAudioContext) {
+  function TrackedAudioContext() {
+    const instance = new NativeAudioContext(...arguments);
+    audioContext = instance;
+    const record = () => {
+      if (instance.state === lastContextState) return;
+      lastContextState = instance.state;
+      contextStates.push(`${instance.state}@${((performance.now() - startedAt) / 1000).toFixed(1)}s`);
+      if (contextStates.length > 6) contextStates.shift();
+    };
+    record();
+    instance.addEventListener('statechange', record);
+    return instance;
+  }
+  TrackedAudioContext.prototype = NativeAudioContext.prototype;
+  window.AudioContext = TrackedAudioContext;
+  if (!window.webkitAudioContext) window.webkitAudioContext = NativeAudioContext;
+}
+
+const $ = id => document.getElementById(id);
+const out = $('out');
+let natives = null, api = null, resumeAudio = () => {}, directMusic = false;
+let ids = {}, runId = 0, running = false, busy = false;
+let timer = 0, raf = 0, frames = 0, maxGap = 0, lastFrame = 0, startedAt = 0, spawned = 0, rejected = 0, lastNote = '';
+const notes = [], errors = [], streamStats = new Map();
+
+function note(text) { lastNote = text; notes.push(`${((performance.now() - startedAt) / 1000).toFixed(1)}s ${text}`); if (notes.length > 12) notes.shift(); }
+
+// One adapter (and one AudioContext) for the page lifetime; Start/Stop only reset state.
+function adapter() {
+  if (api) return api;
+  natives = {};
+  directMusic = $('direct').checked;
+  $('direct').disabled = true;          // choose before the first Start only
+  resumeAudio = installAudioNatives(natives, directMusic).resume;
+  api = name => natives['Java_syx_browser_BrowserAudio_' + name];
+  return api;
+}
+
+// 16-bit mono WAV, faded edges so loops do not click.
+function wav(freq, seconds, amp, rate = 44100) {
+  const n = Math.floor(seconds * rate), buffer = new ArrayBuffer(44 + n * 2), view = new DataView(buffer);
+  const ascii = (offset, text) => { for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i)); };
+  ascii(0, 'RIFF'); view.setUint32(4, 36 + n * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true); ascii(36, 'data'); view.setUint32(40, n * 2, true);
+  const fade = Math.min(n >> 1, rate * 0.01);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / fade, (n - i) / fade);
+    view.setInt16(44 + i * 2, Math.sin(2 * Math.PI * freq * i / rate) * amp * env * 32767, true);
+  }
+  return new Uint8Array(buffer);
+}
+
+function setControls(mode) {
+  $('start').disabled = mode !== 'stopped';
+  $('stop').disabled = mode === 'stopped';
+  $('reset').disabled = mode !== 'running';
+  $('rate').disabled = mode === 'busy';
+}
+
+function frame(now) {
+  const gap = now - lastFrame;
+  if (gap > maxGap) maxGap = gap;
+  lastFrame = now; frames++;
+  if (running) raf = requestAnimationFrame(frame);
+}
+
+function spawnEffects() {
+  if (!running || !ids.effect) return;
+  spawned++;
+  api('playEffect')(null, ids.effect, 0.35, 0.9 + Math.random() * 0.2, $('spatial').checked,
+    Math.random() * canvas.width, Math.random() * canvas.height)
+    .then(ok => { if (!ok) rejected++; }, error => { rejected++; note('effect rejected: ' + (error && error.message || error)); });
+}
+
+// Every await is guarded by the run token; a stopped run can neither publish ids nor start the next load.
+async function startStreams(run) {
+  const alive = () => run === runId && running;
+  const local = {};
+  await api('setListener')(null, 640, 360);
+  local.music = await api('load')(null, 'probe-music.wav', wav(220, 2, 0.18), 1);
+  if (!alive()) return false;
+  local.ambient = await api('load')(null, 'probe-ambient.wav', wav(330, 3, 0.12), 2);
+  if (!alive()) return false;
+  local.effect = await api('load')(null, 'probe-effect.wav', wav(660, 0.08, 0.25), 3);
+  if (!alive()) return false;
+  if (!local.music || !local.ambient || !local.effect) throw new Error('asset load failed: ' + JSON.stringify(local));
+  ids = local;                        // publish only after every load resolved and the run is still current
+  await api('setStreamLoop')(null, local.music, true);
+  await api('setStreamLoop')(null, local.ambient, true);
+  await api('setStreamPosition')(null, local.ambient, 180, 300);
+  if (!alive()) return false;
+  note('music play=' + await api('playStream')(null, local.music, true));
+  if (!alive()) return false;
+  note('ambient play=' + await api('playStream')(null, local.ambient, true));
+  return alive();
+}
+
+async function start() {
+  if (running || busy) return;
+  const run = ++runId;
+  running = true; busy = true; setControls('busy');
+  const api = adapter();
+  startedAt = performance.now(); frames = maxGap = spawned = rejected = 0; notes.length = 0; streamStats.clear();
+  resumeAudio();
+  if (audioContext && audioContext.state === 'suspended') await audioContext.resume().catch(() => {});
+  note('audioContext=' + (audioContext ? audioContext.state : 'not-created') + ' (Start gesture)');
+  await api('setGain')(null, 0, 0.2);
+  await api('setGain')(null, 1, 0.5);
+  await api('setGain')(null, 2, 0.5);
+  await api('setGain')(null, 3, 0.4);
+  await api('setMuteOnFocus')(null, $('mute').checked);
+  try { await startStreams(run); } catch (error) { if (run === runId) errors.push(String(error && error.message || error)); }
+  if (run !== runId) return;          // a newer Stop/Start owns running/busy/controls now
+  if (audioContext && audioContext.state !== 'running') errors.push('AudioContext state=' + audioContext.state + ' (currentTime can advance while silent)');
+  busy = false;
+  timer = setInterval(spawnEffects, 1000 / Math.max(1, +$('rate').value));
+  lastFrame = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
+  setControls('running');
+  await output('running');
+}
+
+async function output(status) {
+  if (!api) return;
+  const elapsed = (performance.now() - startedAt) / 1000;
+  const stream = async (id, direct) => {
+    if (!id) return 'not loaded';
+    try {
+      const [progress, playing, length] = await Promise.all([api('progress')(null, id), api('isPlaying')(null, id), api('length')(null, id)]);
+      const time=progress*length, stats=streamStats.get(id)||{samples:0,positive:0,max:0};
+      stats.samples++;if(time>0.001)stats.positive++;stats.max=Math.max(stats.max,time);streamStats.set(id,stats);
+      return `requestedPath=${direct ? 'direct-music' : 'webaudio-graph'} playing=${playing} t=${time.toFixed(2)}s len=${length.toFixed(2)}s positiveSamples=${stats.positive}/${stats.samples} maxTime=${stats.max.toFixed(2)}s`;
+    } catch (error) { return 'error: ' + (error && error.message || error); }
+  };
+  const lines = [
+    `PROBE ${status} ${elapsed.toFixed(1)}s   raf=${running ? 'scheduled' : 'stopped'} directMusic=${directMusic}`,
+    `heartbeat: fps=${elapsed > 0 ? (frames / elapsed).toFixed(1) : '0'} maxFrameGap=${maxGap.toFixed(0)}ms`,
+    `audioContext: state=${audioContext ? audioContext.state : 'not-created'} sampleRate=${audioContext ? audioContext.sampleRate : '-'} transitions=[${contextStates.join(', ') || 'none'}]`,
+    `focus: hidden=${document.hidden} visibility=${document.visibilityState} hasFocus=${document.hasFocus()} muteOnFocus=${$('mute').checked} masterLevel=0.20`,
+    `note: short requested loops may use WebAudio buffers; clocks are not an acoustic output measurement; context running is required for WebAudio output`,
+    `music   ${await stream(ids.music, directMusic)}`,
+    `ambient ${await stream(ids.ambient, false)}`,
+    `effects spawned=${spawned} rejected=${rejected} rate=${$('rate').value}/s spatial=${$('spatial').checked}`,
+    `errors(${errors.length}): ${errors.length ? errors.slice(-5).join(' | ') : 'none'}`,
+    `last: ${lastNote}`
+  ];
+  out.replaceChildren(...lines.map(text => { const row=document.createElement('div'); row.textContent=text; return row; }));
+}
+
+async function stop() {
+  if (!running && !busy) return;
+  const run = ++runId;
+  running = false; busy = true;          // invalidate in-flight start/reset before disposing
+  clearInterval(timer); cancelAnimationFrame(raf);
+  ids = {};
+  setControls('busy');
+  // dispose cancels in-flight loads/plays but keeps adapter, AudioContext and gesture listeners alive.
+  await api('dispose')();
+  if (run !== runId) return;
+  busy = false;
+  setControls('stopped');
+  note('dispose sent (stop); adapter kept');
+  await output('stopped');
+}
+
+async function reset() {
+  if (!running || busy) return;
+  const run = ++runId;
+  busy = true; setControls('busy');
+  await api('dispose')();
+  if (run !== runId) return;             // Stop superseded this reset
+  ids = {};
+  note('dispose returned, reloading through the same adapter');
+  let live = false;
+  try { live = await startStreams(run); } catch (error) { if (run === runId) errors.push(String(error && error.message || error)); }
+  if (run !== runId) return;
+  busy = false; setControls('running');
+  note('reset complete live=' + live);
+  await output('running');
+}
+
+window.addEventListener('error', event => errors.push('error: ' + event.message));
+window.addEventListener('unhandledrejection', event => errors.push('rejection: ' + (event.reason && event.reason.message || event.reason)));
+const warn = console.warn.bind(console);
+console.warn = (...args) => { errors.push('warn: ' + args.map(String).join(' ')); warn(...args); };
+
+$('start').onclick = start;
+$('stop').onclick = stop;
+$('reset').onclick = reset;
+$('rate').onchange = () => { if (running) { clearInterval(timer); timer = setInterval(spawnEffects, 1000 / Math.max(1, +$('rate').value)); } };
+$('mute').onchange = () => { if (api) api('setMuteOnFocus')(null, $('mute').checked); };
+document.addEventListener('visibilitychange', () => { if (api) output(running ? 'running' : 'stopped'); });
+window.addEventListener('focus', () => { if (api) output(running ? 'running' : 'stopped'); });
+window.addEventListener('blur', () => { if (api) output(running ? 'running' : 'stopped'); });
+setInterval(() => { if (api) output(running ? 'running' : 'stopped'); }, 500);
+</script>

@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>PCM audio probe</title>
+<style>body{font:16px system-ui;max-width:900px;margin:2rem auto;background:#16202b;color:#eee}button{font:inherit;padding:.6rem}#log div{margin:.5rem 0}</style>
+<h1>PCM music and ambience probe</h1><p>Synthetic audio only. No game resources or saves. The probe forbids HTMLAudio and checks the buffer path.</p>
+<button id="run">Run PCM audio test</button><p id="heartbeat">Ready</p><div id="log"></div>
+<script src="audio.js"></script><script>
+const log=text=>{const row=document.createElement('div');row.textContent=text;document.querySelector('#log').append(row);};
+const start=performance.now();let beats=0,ctx,constructing=false;
+setInterval(()=>{document.querySelector('#heartbeat').textContent=`Heartbeat ${++beats}; ${((performance.now()-start)/1000).toFixed(1)}s; AudioContext ${ctx?.state || (constructing?'constructor pending':'not created')}`;},500);
+const NativeAudioContext=window.AudioContext;
+window.AudioContext=class extends NativeAudioContext{constructor(...args){constructing=true;super(...args);ctx=this;constructing=false;}};
+window.Audio=class{constructor(){throw Error('HTMLAudio must not be used by PCM mode');}};
+var canvas={width:1280,height:720};
+const natives={},controller=installAudioNatives(natives,false,false,true),api=name=>natives['Java_syx_browser_BrowserAudio_'+name];
+function wav(seconds){
+  const rate=16000,count=rate*seconds,bytes=new Uint8Array(44+count*2),v=new DataView(bytes.buffer);
+  const text=(at,s)=>{for(let i=0;i<s.length;i++)v.setUint8(at+i,s.charCodeAt(i));};
+  text(0,'RIFF');v.setUint32(4,36+count*2,true);text(8,'WAVE');text(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,rate,true);v.setUint32(28,rate*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);text(36,'data');v.setUint32(40,count*2,true);
+  for(let i=0;i<count;i++)v.setInt16(44+i*2,Math.sin(i/rate*Math.PI*2*220)*1600,true);
+  return bytes;
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const require=(ok,text)=>{if(!ok)throw Error(text);};
+document.querySelector('#run').onclick=async()=>{
+  document.querySelector('#run').disabled=true;
+  const watchdog=setTimeout(()=>log('TIMEOUT: JavaScript runs, but the audio operation did not finish.'),15000);
+  try{
+    log('Creating AudioContext and decoding 120-second music without HTMLAudio…');
+    const music=await api('load')(null,'synthetic-long.wav',wav(120),1);
+    require(music>0,'long music load failed');controller.resume();
+    log(`Loaded music: ${(await api('length')(null,music)).toFixed(2)} seconds; context ${ctx.state}, ${ctx.sampleRate} Hz`);
+    await api('setStreamGain')(null,music,.2);require(await api('playStream')(null,music,true),'play failed');
+    await wait(1200);const before=await api('progress')(null,music);require(before>0,'music clock did not advance');
+    await api('stopStream')(null,music);require(!await api('isPlaying')(null,music),'stop failed');
+    await api('playStream')(null,music,false);await wait(500);require(await api('progress')(null,music)>before,'resume lost position');
+    await ctx.suspend();const held=await api('progress')(null,music);require(await api('isPlaying')(null,music),'suspended context lost logical playback');
+    await wait(250);require(Math.abs(await api('progress')(null,music)-held)<.001,'suspended context clock advanced');
+    await ctx.resume();require(await api('isPlaying')(null,music),'context resume lost the active source');
+    const ambient=await api('load')(null,'synthetic-loop.wav',wav(1),2);require(ambient>0,'ambient load failed');
+    await api('setStreamGain')(null,ambient,.1);await api('setStreamPosition')(null,ambient,0,0);await api('setStreamLoop')(null,ambient,true);
+    require(await api('playStream')(null,ambient,true),'ambient play failed');await wait(2300);require(await api('isPlaying')(null,ambient),'loop stopped');
+    await api('setStreamLoop')(null,ambient,false);await wait(1200);require(!await api('isPlaying')(null,ambient),'loop-off did not finish');
+    await api('dispose')();require(!await api('isPlaying')(null,music),'dispose failed');
+    log('PASS: long music, progress, pause/resume, spatial loop, loop-off and dispose. No HTMLAudio. Clock checks do not prove acoustic output.');
+  }catch(error){log('FAIL: '+error.message);console.error(error);}
+  finally{clearTimeout(watchdog);await api('dispose')();document.querySelector('#run').disabled=false;}
+};
+</script>

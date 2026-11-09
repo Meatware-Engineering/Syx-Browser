@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Songs of Syx browser port — beta</title>
+<style>body { margin: 0; }</style>
+<body>
+<h1>Syx Browser · Beta</h1>
+<p id="status">Loading Java runtime…</p>
+<div id="display"></div>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
+<script src="vendor/pngjs.js"></script>
+<script src="shader.js?v=3"></script>
+<script src="bridge.js?v=3"></script>
+<script src="audio.js"></script>
+<script src="save-lock.js"></script>
+<script src="language.js"></script>
+<script>
+// Opt-in diagnostic path; ambience and effects keep Web Audio spatialization.
+installAudioNatives(natives,new URLSearchParams(location.search).get('directMusic')==='1',new URLSearchParams(location.search).get('audio')==='off',new URLSearchParams(location.search).get('audio')==='pcm');
+(async () => {
+  const status = document.querySelector('#status');
+  try {
+    const result = await withStorageLock(saveLockName, async () => {
+      await cheerpjInit({version: 17, enableX11: true, natives, javaProperties: ['user.dir=/app', 'user.home=/files/syx-png-v3', ...browserLanguageProperties()]});
+      await cheerpjCreateDisplay(1024, 768, document.querySelector('#display'));
+      status.textContent = 'Starting game…';
+      const scripts = await fetch('/base/script/index.list');
+      if (!scripts.ok) throw new Error('Could not list game scripts');
+      const jars = (await scripts.text()).split('\n').filter(name => name.endsWith('.jar')).map(name => `/app/base/script/${name}`);
+      return await cheerpjRunMain('init.MainProcess', ['/app/overrides.jar', '/app/game.jar', ...jars].join(':'));
+    });
+    status.textContent = `Game process exited: ${result}`;
+  } catch (error) {
+    if (error instanceof SaveStorageBusy) status.textContent = 'Игра или страница сохранений уже использует данные. Закройте другую вкладку и обновите эту страницу.';
+    else { console.error(error); status.textContent = `Startup failed: ${error}`; }
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><title>HTTP file loading probe</title><pre id="status">Running…</pre>
+<script>
+(async()=>{
+ const status=document.querySelector('#status'), options={cache:'no-store'};
+ const assert=(ok,message)=>{if(!ok)throw Error(message);};
+ try{
+  const whole=await fetch('/shader.js',options), bytes=new Uint8Array(await whole.arrayBuffer());
+  assert(whole.status===200&&bytes.length>32,'Whole fixture unavailable');
+  const suffix=await fetch('/shader.js',{...options,headers:{Range:'bytes=-16'}});
+  assert(suffix.status===206,'Suffix status '+suffix.status);
+  assert(suffix.headers.get('Content-Range')===`bytes ${bytes.length-16}-${bytes.length-1}/${bytes.length}`,'Wrong suffix range');
+  const tail=new Uint8Array(await suffix.arrayBuffer());
+  assert(tail.length===16&&tail.every((v,i)=>v===bytes[bytes.length-16+i]),'Suffix bytes differ');
+  const head=await fetch('/shader.js',{...options,method:'HEAD',headers:{Range:'bytes=2-3'}});
+  assert(head.status===200&&Number(head.headers.get('Content-Length'))===bytes.length,'HEAD returned partial metadata');
+  assert((await head.arrayBuffer()).byteLength===0,'HEAD returned content');
+  const stale=await fetch('/shader.js',{...options,headers:{Range:'bytes=2-3','If-Range':'"old-version"'}});
+  assert(stale.status===200&&(await stale.arrayBuffer()).byteLength===bytes.length,'Conditional fallback failed');
+  const missing=await fetch('/shader.js',{...options,headers:{Range:`bytes=${bytes.length}-`}});
+  assert(missing.status===416&&missing.headers.get('Content-Range')===`bytes */${bytes.length}`,'Unsatisfiable range metadata failed');
+  const percent=await fetch('/tests/fixtures/percent%2520name.txt',options);
+  assert(percent.status===200&&(await percent.text())==='literal-percent-fixture','URL was decoded twice');
+  status.textContent='PASS: suffix bytes, HEAD, If-Range fallback, 416 size and percent filename';
+ }catch(error){status.textContent='FAIL: '+error;console.error(error);}
+})();
+</script>

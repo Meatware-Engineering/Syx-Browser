@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Silent game performance measurement</title>
+<style>body { margin: 0; }</style>
+<body>
+<h1>Songs of Syx browser port</h1>
+<p id="status">Loading Java runtime…</p>
+<div id="display"></div>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
+<script src="vendor/pngjs.js"></script>
+<script src="shader.js?v=3"></script>
+<script src="bridge.js?v=3"></script>
+<script src="audio.js"></script>
+<script src="save-lock.js"></script>
+<script src="language.js"></script>
+<script src="audio-diagnostics.js"></script>
+<script src="performance-diagnostics.js"></script>
+<script>
+installAudioNatives(natives,false,true,false);
+installAudioDiagnostics(natives);
+const perfPanel=document.createElement('pre');
+Object.assign(perfPanel.style,{position:'fixed',left:'4px',bottom:'4px',zIndex:2147483647,background:'#111e',color:'#dfd',font:'12px monospace',pointerEvents:'none',maxWidth:'95vw',whiteSpace:'pre-wrap'});
+document.body.append(perfPanel);
+const perfHistory=[];
+const short=name=>name.replace('Java_org_lwjgl_','').replace('Java_syx_browser_BrowserBridge_','Bridge_');
+const perf=installPerformanceDiagnostics(natives,{render:s=>{
+ const text=`PERF W${s.window}: ${s.seconds}s ${s.frames} frames ${s.fps}fps; p50/p95 ${s.frameP50}/${s.frameP95}ms; p99/max ${s.frameP99}/${s.frameMax}ms; >250ms ${s.framesOver250ms}; canvas ${s.canvas}\n`+
+ `loop lag max ${s.eventLoopLagMax}ms (${s.eventLoopLagsOver250} >250ms); focus changes ${s.focusChanges}; hidden ticks ${s.hiddenTicks}; repeated stencil ${s.repeatedStencilCalls}/${s.stencilCalls}\n`+
+ `native ${s.nativeCalls} calls; sync ${s.syncNativeMs}ms; uploads ${(s.uploadBytes/1048576).toFixed(2)}MiB\n`+
+ s.top.slice(0,3).map(r=>`${short(r.name)} ${r.count} calls ${r.ms}ms`).join('\n')+'\ncount: '+s.frequent.map(r=>`${short(r.name)}=${r.count}`).join(', ');
+ perfHistory.unshift(text);if(perfHistory.length>2)perfHistory.pop();perfPanel.textContent=perfHistory.join('\n\n');
+}});
+(async () => {
+  const status = document.querySelector('#status');
+  try {
+    const result = await withStorageLock('syx-nov6-8f04a60bc2a74f2f9feabd89ad6605a0', async () => {
+      await cheerpjInit({version: 17, enableX11: true, natives, javaProperties: ['user.dir=/app', 'user.home=/files/syx-nov6-8f04a60bc2a74f2f9feabd89ad6605a0', ...browserLanguageProperties()]});
+      await cheerpjCreateDisplay(1024, 768, document.querySelector('#display'));
+      status.textContent = 'Starting game…';
+      const scripts = await fetch('/base/script/index.list');
+      if (!scripts.ok) throw new Error('Could not list game scripts');
+      const jars = (await scripts.text()).split('\n').filter(name => name.endsWith('.jar')).map(name => `/app/base/script/${name}`);
+      return await cheerpjRunMain('init.MainProcess', ['/app/overrides.jar', '/app/game.jar', ...jars].join(':'));
+    });
+    status.textContent = `Game process exited: ${result}`;
+  } catch (error) {
+    if (error instanceof SaveStorageBusy) status.textContent = 'Игра или страница сохранений уже использует данные. Закройте другую вкладку и обновите эту страницу.';
+    else { console.error(error); status.textContent = `Startup failed: ${error}`; }
+  }
+})();
+</script>
+</body>
+</html>

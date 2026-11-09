@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>Silent stencil state cache probe</title>
+<h1>Stencil cache — synthetic WebGL checks</h1><pre id="status">Loading…</pre><div id="display"></div>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="bridge.js"></script><script>
+let stencilCalls=0;const stencilNative=natives.Java_org_lwjgl_opengl_GL11_setStencilOp;
+natives.Java_org_lwjgl_opengl_GL11_setStencilOp=(...args)=>{stencilCalls++;return stencilNative(...args);};
+natives.Java_syx_browser_StencilCacheWebGLProbe_calls=async()=>stencilCalls;
+natives.Java_syx_browser_StencilCacheWebGLProbe_state=async(_lib,a,b,c)=>gl.getParameter(gl.STENCIL_FAIL)===a&&gl.getParameter(gl.STENCIL_PASS_DEPTH_FAIL)===b&&gl.getParameter(gl.STENCIL_PASS_DEPTH_PASS)===c&&gl.getParameter(gl.STENCIL_BACK_FAIL)===a&&gl.getParameter(gl.STENCIL_BACK_PASS_DEPTH_FAIL)===b&&gl.getParameter(gl.STENCIL_BACK_PASS_DEPTH_PASS)===c;
+(async()=>{const status=document.querySelector('#status');try{await cheerpjInit({version:17,natives});const exit=await cheerpjRunMain('syx.browser.StencilCacheWebGLProbe','/app/stencil-cache-probes.jar:/app/overrides.jar');status.textContent=exit===0?'PASS: 512 valid triples, front/back readback, duplicate calls, repeated invalid GL errors, new context; Exit 0':'FAIL: Exit '+exit;}catch(error){status.textContent='FAIL: '+error;}})();
+</script>

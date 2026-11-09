@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><title>Native WAV loop isolation</title>
+<style>body{font:16px monospace;margin:20px}button,audio{margin:8px}#events{white-space:pre-wrap}</style>
+<h1>Native WAV loop isolation</h1>
+<p id="config"></p><button id="start">Start</button><button id="stop">Stop</button>
+<div id="player"></div><div id="status"></div><div id="events"></div>
+<script>
+const query=new URLSearchParams(location.search), seconds=Number(query.get('seconds')||2);
+const typed=query.get('mime')==='1', graph=query.get('graph')==='1', attached=query.get('attached')!=='0', manual=query.get('manual')==='1';
+const media=new Audio(), events=[], status=document.querySelector('#status');
+let wanted=false,manualRestarts=0;
+let context, source, url, outcome='not requested', started=0, samples=0, positive=0, maxTime=0, seeks=0, updates=0;
+media.addEventListener('seeking',()=>seeks++);
+media.addEventListener('timeupdate',()=>{updates++;maxTime=Math.max(maxTime,media.currentTime);});
+document.querySelector('#config').textContent=`seconds=${seconds} mime=${typed?'audio/wav':'empty'} graph=${graph} attached=${attached} manual=${manual}`;
+media.controls=true;media.loop=!manual;media.volume=.02;media.preload='metadata';
+if(attached)document.querySelector('#player').append(media);
+function wav() {
+  const rate=44100,n=Math.floor(seconds*rate),buffer=new ArrayBuffer(44+n*2),view=new DataView(buffer);
+  const text=(at,s)=>[...s].forEach((c,i)=>view.setUint8(at+i,c.charCodeAt(0)));
+  text(0,'RIFF');view.setUint32(4,36+n*2,true);text(8,'WAVE');text(12,'fmt ');
+  view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+  view.setUint32(24,rate,true);view.setUint32(28,rate*2,true);view.setUint16(32,2,true);
+  view.setUint16(34,16,true);text(36,'data');view.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)view.setInt16(44+i*2,Math.sin(2*Math.PI*220*i/rate)*.18*Math.min(1,i/441,(n-i)/441)*32767,true);
+  return buffer;
+}
+for(const event of ['loadedmetadata','playing','waiting','stalled','seeking','seeked','ended','pause','error'])
+  media.addEventListener(event,()=>{events.push(`${event} t=${media.currentTime.toFixed(3)}`);if(events.length>14)events.shift();});
+function requestPlay(){outcome='pending';media.play().then(()=>outcome='resolved',error=>outcome=error.name+': '+error.message);}
+media.addEventListener('ended',()=>{if(manual&&wanted){manualRestarts++;media.currentTime=0;requestPlay();}});
+document.querySelector('#start').onclick=()=>{
+  wanted=true;
+  if(!url){url=URL.createObjectURL(new Blob([wav()],typed?{type:'audio/wav'}:{}));media.src=url;media.load();}
+  if(graph&&!context){context=new AudioContext();source=context.createMediaElementSource(media);source.connect(context.destination);}
+  if(context?.state==='suspended')context.resume();
+  started=performance.now();samples=positive=maxTime=seeks=updates=0;outcome='pending';
+  requestPlay();
+};
+document.querySelector('#stop').onclick=()=>{wanted=false;media.pause();};
+setInterval(()=>{
+  if(started){samples++;if(media.currentTime>0.001)positive++;maxTime=Math.max(maxTime,media.currentTime);}
+  const buffered=[];for(let i=0;i<media.buffered.length;i++)buffered.push(`${media.buffered.start(i).toFixed(2)}-${media.buffered.end(i).toFixed(2)}`);
+  const lines=[`wall=${started?((performance.now()-started)/1000).toFixed(1):0}s t=${media.currentTime.toFixed(3)} duration=${media.duration} playPromise=${outcome}`,
+    `samples=${samples} positive=${positive} maxTime=${maxTime.toFixed(3)} seeks=${seeks} timeupdates=${updates} manualRestarts=${manualRestarts}`,
+    `paused=${media.paused} ended=${media.ended} loop=${media.loop} ready=${media.readyState} network=${media.networkState} context=${context?.state||'none'} buffered=${buffered.join(',')} error=${media.error?.message||'none'}`];
+  status.replaceChildren(...lines.map(text=>{const row=document.createElement('p');row.textContent=text;return row;}));
+  document.querySelector('#events').textContent=events.join('\n');
+},333);
+addEventListener('pagehide',()=>{wanted=false;media.pause();if(url)URL.revokeObjectURL(url);});
+</script>

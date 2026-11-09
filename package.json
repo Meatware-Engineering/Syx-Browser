@@ -1,0 +1,14 @@
+{
+  "name": "syx-browser",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "description": "Unofficial beta browser compatibility layer for Songs of Syx",
+  "scripts": {
+    "build:vendor": "browserify node_modules/pngjs/lib/png.js --standalone png -o vendor/pngjs.js",
+    "test": "sh tests/run-portable.sh"
+  },
+  "devDependencies": {
+    "browserify": "17.0.1",
+    "pngjs": "7.0.0"
+  }
+}

@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><title>Point size context reset probe</title><pre id="status">Running…</pre><div id="display"></div>
+<script src="shader.js"></script><script src="bridge.js"></script><script>
+(async()=>{
+ const status=document.querySelector('#status'),api=name=>natives['Java_org_lwjgl_opengl_'+name];
+ const setup=async()=>{
+  if(!await natives.Java_syx_browser_BrowserBridge_createContext(null,64,32))throw Error('WebGL2 unavailable');
+  const program=await api('GL20_glCreateProgram')();
+  for(const [type,source] of [[gl.VERTEX_SHADER,'#version 330 core\nlayout(location=0) in vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}'],
+                            [gl.FRAGMENT_SHADER,'#version 330 core\nout vec4 color;void main(){color=vec4(1.0,0.0,0.0,1.0);}']]){
+   const shader=await api('GL20_glCreateShader')(null,type);await api('GL20_shaderSource')(null,shader,source);await api('GL20_glCompileShader')(null,shader);
+   if(!await api('GL20_glGetShaderi')(null,shader,gl.COMPILE_STATUS))throw Error(await api('GL20_glGetShaderInfoLog')(null,shader));
+   await api('GL20_glAttachShader')(null,program,shader);
+  }
+  await api('GL20_glLinkProgram')(null,program);if(!await api('GL20_glGetProgrami')(null,program,gl.LINK_STATUS))throw Error('Link failed');
+  await api('GL20_glUseProgram')(null,program);
+  await api('GL30_glBindVertexArray')(null,await api('GL30_glGenVertexArrays')());
+  await api('GL15_glBindBuffer')(null,gl.ARRAY_BUFFER,await api('GL15_glGenBuffers')());
+  await api('GL15_bufferDataBytes')(null,gl.ARRAY_BUFFER,new Float32Array([0,0]),gl.STATIC_DRAW);
+  await api('GL20_glVertexAttribPointer')(null,0,2,gl.FLOAT,false,0,0);await api('GL20_glEnableVertexAttribArray')(null,0);
+  await api('GL15_glBindBuffer')(null,gl.ELEMENT_ARRAY_BUFFER,await api('GL15_glGenBuffers')());
+  await api('GL15_bufferDataInts')(null,gl.ELEMENT_ARRAY_BUFFER,new Uint32Array([0]),gl.STATIC_DRAW);
+ };
+ const count=async()=>{
+  gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);await api('GL20_glDrawElements')(null,gl.POINTS,1,gl.UNSIGNED_INT,0);
+  const data=new Uint8Array(64*32*4);gl.readPixels(0,0,64,32,gl.RGBA,gl.UNSIGNED_BYTE,data);
+  let n=0;for(let i=0;i<data.length;i+=4)if(data[i]===255)n++;
+  if(gl.getError()!==gl.NO_ERROR)throw Error('GL error');return n;
+ };
+ try{
+  await setup();await api('GL11_glPointSize')(null,7);const before=await count();
+  if(before!==49)throw Error('Point size7 probe produced '+before+' pixels');
+  await natives.Java_syx_browser_BrowserBridge_destroyContext();await setup();const after=await count();
+  if(after!==1)throw Error('New context retained old point size: '+after+' pixels');
+  status.textContent='PASS: size7 draws49 pixels; a recreated context defaults to1 pixel; GL=0';
+ }catch(error){status.textContent='FAIL: '+error;console.error(error);}
+ finally{await natives.Java_syx_browser_BrowserBridge_destroyContext();}
+})();
+</script>

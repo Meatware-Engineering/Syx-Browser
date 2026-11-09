@@ -1,0 +1,19 @@
+# Local commercial game classes, patched output and archives: NEVER publish.
+*.jar
+*.class
+*.zip
+/build/
+/trace-build/
+/work/
+/node_modules/
+/vendor/pngjs.js
+__pycache__/
+*.pyc
+.DS_Store
+# Private development reports/measurements retained locally.
+/*REVIEW*.md
+/*2026*.md
+/*2026*.txt
+/*INVESTIGATION*.md
+/audio-fixes.patch
+/*measurements.json

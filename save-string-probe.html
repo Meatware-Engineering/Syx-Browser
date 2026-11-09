@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>String-file save import probe</title><pre id="status">Running…</pre>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script>
+(async()=>{
+ const status=document.querySelector('#status'), tag=crypto.randomUUID(), root='/files/syx-string-probe-'+tag;
+ const good='/str/syx-string-good-'+tag+'.zip', bad='/str/syx-string-bad-'+tag+'.zip';
+ let Archive, addedGood=false,addedBad=false,passed=false;
+ try{
+  await cheerpjInit({version:17});const library=await cheerpjRunLibrary('/app/overrides.jar');Archive=await library.syx.browser.SaveArchive;
+  const bytes=Uint8Array.from(atob('UEsDBBQAAAAAANEAZ11IituCGQAAABkAAAAQAAAAc2F2ZXMvcHJvYmUuc2F2ZXN5bnRoZXRpYyBhZGFwdGVyIGZpeHR1cmVQSwECFAMUAAAAAADRAGddSIrbghkAAAAZAAAAEAAAAAAAAAAAAAAAgAEAAAAAc2F2ZXMvcHJvYmUuc2F2ZVBLBQYAAAAAAQABAD4AAABHAAAAAAA='),x=>x.charCodeAt(0));
+  let central=-1;for(let i=0;i<bytes.length-3;i++)if(bytes[i]===80&&bytes[i+1]===75&&bytes[i+2]===1&&bytes[i+3]===2){central=i;break;}
+  if(central<0)throw Error('Invalid synthetic fixture');
+  cheerpOSAddStringFile(bad,bytes.slice(0,central));addedBad=true;
+  let rejected=false;try{await Archive.restore(root,bad);}catch(error){rejected=true;}
+  if(!rejected)throw Error('Truncated string-file ZIP accepted');
+  cheerpOSAddStringFile(good,bytes);addedGood=true;
+  const result=await Archive.restore(root,good);
+  if(result!=='Восстановлено: 1; пропущено существующих: 0')throw Error('Wrong restore result: '+result);
+  if(await (await cjFileBlob(root+'/saves/probe.save')).text()!=='synthetic adapter fixture')throw Error('Payload changed');
+  passed=true;status.textContent='Cleaning up…';
+ }catch(error){status.textContent='FAIL: '+error;console.error(error);}
+ finally{
+  if(addedGood)cheerpOSRemoveStringFile(good);if(addedBad)cheerpOSRemoveStringFile(bad);
+  if(Archive)for(const path of [root+'/saves/probe.save',root+'/saves',root])try{await Archive.removeTemporary(path);}catch(error){console.warn('Probe cleanup failed',error);passed=false;status.textContent='FAIL: probe cleanup failed';}
+  if(passed)status.textContent='PASS: /str ZIP import, truncated archive rejected, valid payload preserved, cleanup completed';
+ }
+})();
+</script>

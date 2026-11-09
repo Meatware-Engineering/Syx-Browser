@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>Framebuffer renderbuffer probe</title><pre id="status">Running…</pre><div id="display"></div>
+<script src="bridge.js"></script><script>
+(async()=>{
+ const status=document.querySelector('#status'),api=name=>natives['Java_org_lwjgl_opengl_'+name];
+ const complete=async label=>{const s=await api('GL30_glCheckFramebufferStatus')(null,gl.FRAMEBUFFER);if(s!==gl.FRAMEBUFFER_COMPLETE)throw Error(label+': FBO='+s);};
+ const pixel=attachment=>{gl.readBuffer(attachment);const data=new Uint8Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,data);return Array.from(data);};
+ try{
+  if(!await natives.Java_syx_browser_BrowserBridge_createContext(null,8,8))throw Error('WebGL2 unavailable');
+  const ca=gl.COLOR_ATTACHMENT0,fb=await api('GL30_glGenFramebuffers')();await api('GL30_glBindFramebuffer')(null,gl.FRAMEBUFFER,fb);
+  const rb=await api('GL30_glGenRenderbuffers')();await api('GL30_glBindRenderbuffer')(null,gl.RENDERBUFFER,rb);
+  await api('GL30_glRenderbufferStorage')(null,gl.RENDERBUFFER,gl.RGBA8,8,8);
+  await api('GL30_glFramebufferRenderbuffer')(null,gl.FRAMEBUFFER,ca,gl.RENDERBUFFER,rb);await complete('before drawBuffers');
+  await api('GL20_drawBuffers')(null,new Int32Array([ca]));await complete('renderbuffer after drawBuffers');
+  gl.clearColor(1,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT);if(pixel(ca).join()!=='255,0,0,255')throw Error('Renderbuffer pixel changed');
+  await api('GL30_glFramebufferRenderbuffer')(null,gl.FRAMEBUFFER,ca,gl.RENDERBUFFER,0);
+  await api('GL30_glFramebufferRenderbuffer')(null,gl.FRAMEBUFFER,ca+1,gl.RENDERBUFFER,rb);
+  const texture=await api('GL11_glGenTextures')();await api('GL11_glBindTexture')(null,gl.TEXTURE_2D,texture);
+  await api('GL11_texImage2D')(null,gl.TEXTURE_2D,0,gl.RGBA8,8,8,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  await api('GL30_glFramebufferTexture2D')(null,gl.FRAMEBUFFER,ca,gl.TEXTURE_2D,texture,0);
+  await api('GL20_drawBuffers')(null,new Int32Array([ca+1,ca]));await complete('mixed remapped');
+  gl.clearBufferfv(gl.COLOR,0,new Float32Array([1,0,0,1]));gl.clearBufferfv(gl.COLOR,1,new Float32Array([0,1,0,1]));
+  await api('GL20_drawBuffers')(null,new Int32Array([ca,ca+1]));await complete('mixed restored');
+  const a=pixel(ca),b=pixel(ca+1);if(a.join()!=='0,255,0,255'||b.join()!=='255,0,0,255')throw Error(`Logical colors lost: ${a}; ${b}`);
+  const error=gl.getError();if(error!==0)throw Error('GL='+error);
+  status.textContent='PASS: color renderbuffer survives drawBuffers; mixed texture/renderbuffer colors survive remapping; GL=0';
+ }catch(error){status.textContent='FAIL: '+error;console.error(error);}
+ finally{await natives.Java_syx_browser_BrowserBridge_destroyContext();}
+})();
+</script>

@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><title>Silent buffer upload performance probe</title>
+<h1>Buffer upload — synthetic WebGL correctness and runtime timing</h1><pre id="status">Loading…</pre><div id="display"></div>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="bridge.js"></script><script>
+const status=document.querySelector('#status');
+for(const [key,value] of Object.entries(natives))if(key.startsWith('Java_org_lwjgl_opengl_GL15_'))natives[key.replace('GL15_','GL15Baseline_')]=value;
+natives.Java_syx_browser_BufferUploadPerformanceProbe_report=async(_lib,text)=>{if(!/ round[0-9]/.test(text))status.textContent+='\n'+text;};
+natives.Java_syx_browser_BufferUploadPerformanceProbe_bufferEquals=async(_lib,expected,offset)=>{if(!expected.length)return true;const actual=new Int8Array(expected.length);gl.getBufferSubData(gl.ARRAY_BUFFER,offset,actual);return expected.every((value,index)=>value===actual[index]);};
+natives.Java_syx_browser_BufferUploadPerformanceProbe_error=async()=>gl.getError();
+(async()=>{try{await cheerpjInit({version:17,natives});const exit=await cheerpjRunMain('syx.browser.BufferUploadPerformanceProbe','/app/performance-probes.jar');status.textContent+='\nExit '+exit;}catch(error){status.textContent+='\nFAIL '+error;}})();
+</script>
