@@ -1,6 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>Silent stencil state cache probe</title>
 <h1>Stencil cache — synthetic WebGL checks</h1><pre id="status">Loading…</pre><div id="display"></div>
-<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="bridge.js"></script><script>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="../bridge.js"></script><script>
 let stencilCalls=0;const stencilNative=natives.Java_org_lwjgl_opengl_GL11_setStencilOp;
 natives.Java_org_lwjgl_opengl_GL11_setStencilOp=(...args)=>{stencilCalls++;return stencilNative(...args);};
 natives.Java_syx_browser_StencilCacheWebGLProbe_calls=async()=>stencilCalls;

@@ -12,9 +12,9 @@ body{font:16px/1.5 system-ui,sans-serif;background:#191918;color:#eee;max-width:
 <section><h2>Восстановить из архива</h2><p>Существующие файлы не заменяются: при совпадении имён они будут пропущены.</p><label for="file">Архив, созданный этой страницей</label><br><input id="file" type="file" accept=".zip,application/zip"><br><button id="import" disabled>Восстановить</button></section>
 <section><h2>Перенести сохранение Steam</h2><p>На Mac файлы игры находятся в <code>~/Library/Application Support/songsofsyx/saves/saves/</code>. Выберите файл <code>.save</code>: оригинал останется на месте, а одноимённое браузерное сохранение не будет заменено.</p><label for="native-file">Файл сохранения</label><br><input id="native-file" type="file" accept=".save"><br><button id="native-import" disabled>Перенести сохранение</button></section>
 <p id="status" role="status" aria-live="polite">Подготовка…</p>
-<p><a href="/runtime-4.3-probe.html">CheerpJ 4.3</a> · <a href="/runtime-5.0-probe.html">CheerpJ 5.0</a></p>
+<p><a href="runtime-4.3-probe.html">CheerpJ 4.3</a> · <a href="runtime-5.0-probe.html">CheerpJ 5.0</a></p>
 <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
-<script src="save-lock.js"></script>
+<script src="../save-lock.js"></script>
 <script>
 (async()=>{
  const root='/files/syx-runtime-compare-v1/.local/share/songsofsyx/saves';

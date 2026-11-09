@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 let time=0;const context=vm.createContext({console,ArrayBuffer,canvas:{width:800,height:600},setInterval,clearInterval});
-vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../performance-diagnostics.js'),'utf8'),context);
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../diagnostics/performance-diagnostics.js'),'utf8'),context);
 const promise=Promise.resolve(7),failure=new Error('kept'),natives={
  Java_org_lwjgl_glfw_GLFW_glfwSwapBuffers(){time+=2;return promise;},
  Java_org_lwjgl_opengl_GL15_bufferDataBytes(_lib,target,data){time+=3;return data.length;},

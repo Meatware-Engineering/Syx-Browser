@@ -1,0 +1,4 @@
+<!doctype html><meta charset="utf-8"><title>ReadPixels probe</title><p id="status">Running…</p><div id="display"></div>
+<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="../shader.js"></script><script src="../bridge.js"></script><script>
+(async()=>{try{await cheerpjInit({version:17,natives});const result=await cheerpjRunMain('syx.browser.ReadPixelsProbe','/app/probes.jar:/app/overrides.jar');document.querySelector('#status').textContent=`Exit ${result}`;}catch(e){console.error(e);document.querySelector('#status').textContent=`Failed: ${e}`;}})();
+</script>

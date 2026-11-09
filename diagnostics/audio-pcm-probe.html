@@ -2,7 +2,7 @@
 <style>body{font:16px system-ui;max-width:900px;margin:2rem auto;background:#16202b;color:#eee}button{font:inherit;padding:.6rem}#log div{margin:.5rem 0}</style>
 <h1>PCM music and ambience probe</h1><p>Synthetic audio only. No game resources or saves. The probe forbids HTMLAudio and checks the buffer path.</p>
 <button id="run">Run PCM audio test</button><p id="heartbeat">Ready</p><div id="log"></div>
-<script src="audio.js"></script><script>
+<script src="../audio.js"></script><script>
 const log=text=>{const row=document.createElement('div');row.textContent=text;document.querySelector('#log').append(row);};
 const start=performance.now();let beats=0,ctx,constructing=false;
 setInterval(()=>{document.querySelector('#heartbeat').textContent=`Heartbeat ${++beats}; ${((performance.now()-start)/1000).toFixed(1)}s; AudioContext ${ctx?.state || (constructing?'constructor pending':'not created')}`;},500);

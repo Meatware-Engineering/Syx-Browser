@@ -21,8 +21,9 @@ Known limitations:
 - The current launch/build scripts target the macOS Steam installation and
   Homebrew OpenJDK 21 on Apple Silicon. Windows and Linux setup is not provided.
 - Patches depend on game bytecode and may reject or break with another version.
-- Safari audio can hang in the browser's media subsystem. Start with
-  `?audio=off` for a completely silent run (no audio graph is created).
+- Audio has worked in Chromium in testing by the project owner. Safari audio
+  can hang in its media subsystem; `?audio=off` is a Safari workaround for a
+  completely silent run (no audio graph is created), not a universal requirement.
 - Long frames and stutters remain, especially at high simulation speed.
   Avoid treating maximum speed as stable.
 - Browser saves are separate from Steam saves. Clearing site data, changing
@@ -61,9 +62,9 @@ sh build.sh
 python3 server.py
 ```
 
-Open **http://127.0.0.1:8765/?audio=off** for the recommended silent beta run.
-The first runtime load and world generation can take several minutes. To test
-audio, open the same URL without `?audio=off`; audio may require a user gesture.
+Open **http://127.0.0.1:8765/**. Audio may require a user gesture.
+For Safari audio problems, use **http://127.0.0.1:8765/?audio=off** as a silent
+workaround. The first runtime load and world generation can take several minutes.
 
 `build.sh` reads your installed game JAR and creates `overrides.jar` locally.
 The original game is not modified. **Do not distribute this generated JAR**:
@@ -99,8 +100,9 @@ sh tests/run-portable.sh
 
 They cover audio lifecycle, input, rendering adapters, buffer uploads, language,
 and HTTP range behavior using synthetic fixtures. This is not an end-to-end game
-certification. Additional Java tests and diagnostic pages live in `tests/` and
-at the repository root; several Java scripts use the same macOS JDK/game paths.
+certification. Additional Java tests live in `tests/`; standalone browser
+experiments live in [`diagnostics/`](diagnostics/README.md) and are not loaded by
+the game. Several Java scripts use the same macOS JDK/game paths.
 
 `?audio=pcm` and `?directMusic=1` are diagnostic audio modes, not stability fixes.
 The runtime comparison pages are experiments; the normal entry point uses CheerpJ 4.3.
@@ -114,12 +116,13 @@ vendor bundle have **not** been verified because package-registry access was una
 
 ## Contents
 
-- `src/`: browser bridge, Java API adapters, and synthetic test probes.
+- `src/`: browser bridge and Java API adapters.
 - `ByteBufferPatcher.java`: local bytecode compatibility patcher.
 - `bridge.js`, `shader.js`, `audio.js`: WebGL/Web Audio implementations.
 - `server.py`: loopback-only local file server.
 - `saves.html`, `language.html`: browser data utilities.
-- `tests/`: regression checks and fixtures.
+- `tests/`: regression checks, Java probes, and fixtures.
+- `diagnostics/`: optional browser experiments, separate from the normal launch.
 
 See [third-party notes](THIRD_PARTY_NOTICES.md). The project source is published
 for inspection; no blanket license for game code or third-party runtimes is implied.

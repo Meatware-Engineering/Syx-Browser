@@ -1,6 +1,0 @@
-<!doctype html><meta charset="utf-8"><title>Java audio probe</title><button id="run" disabled>Run Java audio test</button><pre id="result">Loading Java runtime</pre>
-<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script><script src="shader.js"></script><script src="bridge.js"></script><script src="audio.js"></script><script>
-installAudioNatives(natives,false,false,new URLSearchParams(location.search).get('audio')==='pcm');
-(async()=>{try{await cheerpjInit({version:17,natives});document.querySelector('#run').disabled=false;document.querySelector('#result').textContent='Ready';}catch(e){document.querySelector('#result').textContent='FAIL: '+e;}})();
-document.querySelector('#run').onclick=async()=>{try{const result=await cheerpjRunMain('snake2d.BrowserAudioProbe','/app/overrides.jar:/app/game.jar');document.querySelector('#result').textContent=`Exit ${result}; see console`;}catch(e){console.error(e);document.querySelector('#result').textContent='FAIL: '+e;}};
-</script>

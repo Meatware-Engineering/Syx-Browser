@@ -1,5 +1,5 @@
 <!doctype html><meta charset="utf-8"><title>Spatial audio probe</title><button id="run">Run spatial audio test</button><pre id="result">Ready</pre>
-<script src="shader.js"></script><script src="bridge.js"></script><script src="audio.js"></script>
+<script src="../shader.js"></script><script src="../bridge.js"></script><script src="../audio.js"></script>
 <script>
 const gains=[], createGain=AudioContext.prototype.createGain;
 AudioContext.prototype.createGain=function(){const node=createGain.call(this);gains.push(node);return node;};

@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 let time=0,focused=true,hidden=false;const timers=new Map();let nextTimer=0;
 const context=vm.createContext({ArrayBuffer,document:{hasFocus:()=>focused,get hidden(){return hidden;}},setInterval(fn,ms){const id=++nextTimer;timers.set(id,{fn,ms});return id;},clearInterval(id){timers.delete(id);}});
-vm.runInContext(fs.readFileSync(path.join(__dirname,'../performance-diagnostics.js'),'utf8'),context);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../diagnostics/performance-diagnostics.js'),'utf8'),context);
 const calls=[],natives={Java_org_lwjgl_opengl_GL11_glStencilFunc(...args){calls.push(args);},Java_org_lwjgl_opengl_GL11_glStencilOp(){},Java_syx_browser_BrowserBridge_destroyContext(){}};
 context.natives=natives;context.now=()=>time;context.render=()=>{};
 const probe=vm.runInContext('installPerformanceDiagnostics(natives,{now,render})',context);

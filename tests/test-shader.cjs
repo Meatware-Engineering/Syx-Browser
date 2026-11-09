@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { webglSource, expandPointGeometry, uniformInitializers } = require('./shader.js');
+const { webglSource, expandPointGeometry, uniformInitializers } = require('../shader.js');
 
 const converted = webglSource('#version 330 core\nin uvec2 tex;\nout vec2 uv;\nvoid main(){ uv = tex; }');
 assert.match(converted, /^#version 300 es\nprecision highp float;/);

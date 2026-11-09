@@ -1,4 +1,4 @@
-<!doctype html><meta charset="utf-8"><title>Framebuffer NONE investigation</title><pre id="status">Running…</pre><div id="display"></div><script src="bridge.js"></script><script>
+<!doctype html><meta charset="utf-8"><title>Framebuffer NONE investigation</title><pre id="status">Running…</pre><div id="display"></div><script src="../bridge.js"></script><script>
 (async()=>{const status=document.querySelector('#status'),api=n=>natives['Java_org_lwjgl_opengl_'+n];try{
  if(!await natives.Java_syx_browser_BrowserBridge_createContext(null,8,8))throw Error('WebGL2 unavailable');
  const ca=gl.COLOR_ATTACHMENT0,fb=await api('GL30_glGenFramebuffers')();await api('GL30_glBindFramebuffer')(null,gl.FRAMEBUFFER,fb);

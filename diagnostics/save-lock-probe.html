@@ -1,4 +1,4 @@
-<!doctype html><meta charset="utf-8"><title>Save lock probe</title><button id="run">Run save lock test</button><pre id="result">Ready</pre><script src="save-lock.js"></script><script>
+<!doctype html><meta charset="utf-8"><title>Save lock probe</title><button id="run">Run save lock test</button><pre id="result">Ready</pre><script src="../save-lock.js"></script><script>
 document.querySelector('#run').onclick=async()=>{
   const result=document.querySelector('#result');
   if(!navigator.locks){result.textContent='SKIP: Web Locks unavailable';return;}

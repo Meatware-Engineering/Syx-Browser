@@ -1,19 +1,19 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>Silent game core timing observer</title>
+<title>Silent game swap and updater wait observer</title>
 <style>body { margin: 0; }</style>
 <body>
 <h1>Songs of Syx browser port</h1>
 <p id="status">Loading Java runtime…</p>
 <div id="display"></div>
 <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
-<script src="vendor/pngjs.js"></script>
-<script src="shader.js?v=3"></script>
-<script src="bridge.js?v=3"></script>
-<script src="audio.js"></script>
-<script src="save-lock.js"></script>
-<script src="language.js"></script>
+<script src="../vendor/pngjs.js"></script>
+<script src="../shader.js?v=3"></script>
+<script src="../bridge.js?v=3"></script>
+<script src="../audio.js"></script>
+<script src="../save-lock.js"></script>
+<script src="../language.js"></script>
 <script src="performance-diagnostics.js"></script>
 <script>
 installAudioNatives(natives,false,true,false);
@@ -21,9 +21,9 @@ const corePanel=document.createElement('pre');
 Object.assign(corePanel.style,{position:'fixed',left:'4px',top:'4px',zIndex:2147483647,background:'#111e',color:'#bff',font:'13px monospace',pointerEvents:'none',whiteSpace:'pre-wrap'});
 document.body.append(corePanel);
 const coreHistory=[];let coreSamples=0;
-natives.Java_init_BrowserPerformanceMain_report=async(_lib,...values)=>{
- const names=['update','render','poll','flush','finish','sleep','sound','heapKiB'];
- const row='CORE '+(++coreSamples)+' t='+Math.round(performance.now()/1000)+'s: '+values.map((v,i)=>names[i]+'='+ (Number.isFinite(v)?v.toFixed(2):'n/a')).join(' ');
+natives.Java_init_BrowserWaitPerformanceMain_report=async(_lib,...values)=>{
+ const names=['update','uMax','render','rMax','flush','fMax','swap','sMax','wait','wMax','count'];
+ const row='WAIT '+(++coreSamples)+' t='+Math.round(performance.now()/1000)+'s: '+values.map((v,i)=>names[i]+'='+ (Number.isFinite(Number(v))?Number(v).toFixed(2):'n/a')).join(' ');
  coreHistory.unshift(row);if(coreHistory.length>3)coreHistory.pop();corePanel.textContent=coreHistory.join('\n');
 };
 const perfPanel=document.createElement('pre');
@@ -48,7 +48,7 @@ const perf=installPerformanceDiagnostics(natives,{render:s=>{
       const scripts = await fetch('/base/script/index.list');
       if (!scripts.ok) throw new Error('Could not list game scripts');
       const jars = (await scripts.text()).split('\n').filter(name => name.endsWith('.jar')).map(name => `/app/base/script/${name}`);
-      return await cheerpjRunMain('init.BrowserPerformanceMain', ['/app/core-performance-probes.jar','/app/overrides.jar', '/app/game.jar', ...jars].join(':'));
+      return await cheerpjRunMain('init.BrowserWaitPerformanceMain', ['/app/core-wait-probes.jar','/app/overrides.jar', '/app/game.jar', ...jars].join(':'));
     });
     status.textContent = `Game process exited: ${result}`;
   } catch (error) {

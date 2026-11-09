@@ -1,5 +1,5 @@
 <!doctype html><meta charset="utf-8"><title>Framebuffer renderbuffer probe</title><pre id="status">Running…</pre><div id="display"></div>
-<script src="bridge.js"></script><script>
+<script src="../bridge.js"></script><script>
 (async()=>{
  const status=document.querySelector('#status'),api=name=>natives['Java_org_lwjgl_opengl_'+name];
  const complete=async label=>{const s=await api('GL30_glCheckFramebufferStatus')(null,gl.FRAMEBUFFER);if(s!==gl.FRAMEBUFFER_COMPLETE)throw Error(label+': FBO='+s);};

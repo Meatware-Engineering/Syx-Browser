@@ -1,24 +1,31 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>Silent game performance measurement</title>
+<title>Silent CheerpJ runtime comparison</title>
 <style>body { margin: 0; }</style>
 <body>
 <h1>Songs of Syx browser port</h1>
 <p id="status">Loading Java runtime…</p>
 <div id="display"></div>
-<script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
-<script src="vendor/pngjs.js"></script>
-<script src="shader.js?v=3"></script>
-<script src="bridge.js?v=3"></script>
-<script src="audio.js"></script>
-<script src="save-lock.js"></script>
-<script src="language.js"></script>
-<script src="audio-diagnostics.js"></script>
+<script src="https://cjrtnc.leaningtech.com/5.0/loader.js"></script>
+<script src="../vendor/pngjs.js"></script>
+<script src="../shader.js?v=3"></script>
+<script src="../bridge.js?v=3"></script>
+<script src="../audio.js"></script>
+<script src="../save-lock.js"></script>
+<script src="../language.js"></script>
 <script src="performance-diagnostics.js"></script>
 <script>
 installAudioNatives(natives,false,true,false);
-installAudioDiagnostics(natives);
+const corePanel=document.createElement('pre');
+Object.assign(corePanel.style,{position:'fixed',left:'4px',top:'4px',zIndex:2147483647,background:'#111e',color:'#bff',font:'13px monospace',pointerEvents:'none',whiteSpace:'pre-wrap'});
+document.body.append(corePanel);
+const coreHistory=[];let coreSamples=0;
+natives.Java_init_BrowserPerformanceMain_report=async(_lib,...values)=>{
+ const names=['update','render','poll','flush','finish','sleep','sound','heapKiB'];
+ const row='CORE '+(++coreSamples)+' t='+Math.round(performance.now()/1000)+'s: '+values.map((v,i)=>names[i]+'='+ (Number.isFinite(v)?v.toFixed(2):'n/a')).join(' ');
+ coreHistory.unshift(row);if(coreHistory.length>3)coreHistory.pop();corePanel.textContent=coreHistory.join('\n');
+};
 const perfPanel=document.createElement('pre');
 Object.assign(perfPanel.style,{position:'fixed',left:'4px',bottom:'4px',zIndex:2147483647,background:'#111e',color:'#dfd',font:'12px monospace',pointerEvents:'none',maxWidth:'95vw',whiteSpace:'pre-wrap'});
 document.body.append(perfPanel);
@@ -33,15 +40,16 @@ const perf=installPerformanceDiagnostics(natives,{render:s=>{
 }});
 (async () => {
   const status = document.querySelector('#status');
+  if(location.origin!=='http://127.0.0.1:8766'){status.textContent='Comparison only: open this page on http://127.0.0.1:8766 to use isolated test storage.';return;}
   try {
-    const result = await withStorageLock('syx-nov6-8f04a60bc2a74f2f9feabd89ad6605a0', async () => {
-      await cheerpjInit({version: 17, enableX11: true, natives, javaProperties: ['user.dir=/app', 'user.home=/files/syx-nov6-8f04a60bc2a74f2f9feabd89ad6605a0', ...browserLanguageProperties()]});
+    const result = await withStorageLock('syx-runtime-compare-v1', async () => {
+      await cheerpjInit({version: 17, enableX11: true, natives, javaProperties: ['user.dir=/app', 'user.home=/files/syx-runtime-compare-v1', ...browserLanguageProperties()]});
       await cheerpjCreateDisplay(1024, 768, document.querySelector('#display'));
       status.textContent = 'Starting game…';
       const scripts = await fetch('/base/script/index.list');
       if (!scripts.ok) throw new Error('Could not list game scripts');
       const jars = (await scripts.text()).split('\n').filter(name => name.endsWith('.jar')).map(name => `/app/base/script/${name}`);
-      return await cheerpjRunMain('init.MainProcess', ['/app/overrides.jar', '/app/game.jar', ...jars].join(':'));
+      return await cheerpjRunMain('init.BrowserPerformanceMain', ['/app/core-performance-probes.jar','/app/overrides.jar', '/app/game.jar', ...jars].join(':'));
     });
     status.textContent = `Game process exited: ${result}`;
   } catch (error) {
