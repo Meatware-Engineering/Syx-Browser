@@ -30,6 +30,14 @@ Known limitations:
   not use this beta for irreplaceable campaigns.
 - CheerpJ is loaded from its vendor's CDN; internet access is required.
 
+## Preview
+
+![Songs of Syx 0.71.44 main menu running in Safari](docs/screenshots/main-menu.png)
+
+Captured locally in Safari on 9 November 2026 with audio disabled. Game artwork
+belongs to its respective owners. This capture verifies startup to the main menu,
+not a complete gameplay regression run.
+
 ## Requirements
 
 - Purchased Songs of Syx, installed through Steam at its default macOS location.
@@ -96,6 +104,13 @@ at the repository root; several Java scripts use the same macOS JDK/game paths.
 
 `?audio=pcm` and `?directMusic=1` are diagnostic audio modes, not stability fixes.
 The runtime comparison pages are experiments; the normal entry point uses CheerpJ 4.3.
+
+## Latest local verification
+
+On 9 November 2026, the portable Node/Python checks passed, the Java adapter build
+completed against the installed game, and Safari reached the 0.71.44 main menu.
+The screenshot used the existing local PNG bundle. A clean npm install and rebuilt
+vendor bundle have **not** been verified because package-registry access was unavailable.
 
 ## Contents
 
